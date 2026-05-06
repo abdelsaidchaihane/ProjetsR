@@ -1,0 +1,193 @@
+---
+title: "Abdel-Said_Chaihane"
+author: "Abdel Said"
+date: "2025-12-08"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Question 1 : Analyse descriptive univariée de la variable magnésium
+
+```{r}
+library(sp)
+data("oxford", package = "gstat")
+coordinates(oxford) <- ~XCOORD + YCOORD
+
+summary(oxford$MG1)
+hist(oxford$MG1, main="Histogramme Mg", xlab="Mg")
+
+```
+
+## Question 2 : Échan-tillon d’apprentissage et échantillon de test
+
+```{r}
+set.seed(1)
+id <- sample(1:nrow(oxford))
+train <- oxford[id[1:100], ]
+test  <- oxford[id[101:126], ]
+```
+
+
+## Question 3 : Analyse variographique
+
+```{r}
+library(geoR)
+geodata = as.geodata(train)
+vario.b = variog(geodata, op="bin", bin.cloud=TRUE,
+                 pairs.min =30)
+vario.c = variog(geodata, op="cloud",pairs.min = 30)
+par(mfrow = c(1,3))
+plot(vario.c, xlab = 'Distance' , ylab = "",pch = 3,col='gray')
+
+
+plot(vario.b, main=" Experimental Variogram",xlab= 'Distance',ylab='Semi-variogram')
+```
+
+```{r}
+library(gstat)
+vario.exp <- variogram(MG1 ~ 1, train)
+
+model.spherique <- fit.variogram(vario.exp, vgm("Sph"))
+model.exponentiel <- fit.variogram(vario.exp, vgm("Exp"))
+model.gaussien <- fit.variogram(vario.exp, vgm("Gau"))
+
+plot(vario.exp, model = model.spherique, main="Spherical")
+plot(vario.exp, model = model.exponentiel, main="Exponential")
+plot(vario.exp, model = model.gaussien, main="Gaussian")
+
+```
+
+## Commentaires des résultats obtenus
+
+1. Modèle Sphérique
+
+La pépite est de 900, ce qui indique une part importante de variabilité non expliquée à très courte distance.
+La portée de 650 suggère que la corrélation spatiale disparaît au-delà de cette distance : les observations espacées de plus de 650 unités ne sont plus liées.
+Le sill de 4100 indique le niveau total de variabilité spatiale une fois que la corrélation est perdue.
+
+2. Modèle Exponentiel
+
+La pépite est faible de 500, ce qui laisse penser que le bruit local est un peu moins important que dans le modèle sphérique.
+La portée effective de 450 signifie que la dépendance spatiale décroît plus vite : la corrélation s’atténue progressivement, sans seuil net.
+Le sill, 4100 est similaire au modèle sphérique, donc la variabilité globale reste comparable.
+
+3. Modèle Gaussien
+
+La pépite très élevée de 1200, indiquant une variabilité locale importante.
+La portée de 500 montre que la corrélation spatiale existe mais reste limitée à des distances relativement courtes.
+Le sill, 3700 est légèrement inférieur aux autres modèles, ce qui suggère une variabilité totale un peu plus faible dans ce cas.
+
+# Question 4 : Comparaison des Krigeages 
+
+```{r}
+pred.sph <- krige(MG1 ~ 1, train, test, model=model.spherique)$var1.pred
+pred.exp <- krige(MG1 ~ 1, train, test, model=model.exponentiel)$var1.pred
+pred.gau <- krige(MG1 ~ 1, train, test, model=model.gaussien)$var1.pred
+
+obs <- test$MG1
+rmse <- function(o,p) sqrt(mean((o-p)^2, na.rm=TRUE))
+RMSE <- c(sph=rmse(obs,pred.sph),
+          exp=rmse(obs,pred.exp),
+          gau=rmse(obs,pred.gau))
+RMSE
+```
+
+Le modèle sphérique présente le RMSE le plus faible (43.33) parmi les trois modèles testés, ce qui signifie qu’il fournit les prédictions les plus proches des valeurs observées sur l’échantillon de test. Les modèles exponentiel et gaussien ont des RMSE plus élevés, indiquant une précision moindre.
+Le modèle sphérique est retenu pour produire la carte finale de prédiction du magnésium, car il minimise l’erreur de prédiction et capture mieux la structure spatiale des données.
+
+
+## Question 5 : Application du Krigeage
+
+```{r}
+x.range <- range(train@coords[,1])
+y.range <- range(train@coords[,2])
+
+# Créer une grille régulière
+grd <- expand.grid(
+  x = seq(x.range[1], x.range[2], length.out = 100),
+  y = seq(y.range[1], y.range[2], length.out = 100)
+)
+
+coordinates(grd) <- ~x+y
+gridded(grd) <- TRUE
+
+krige_result <- krige(MG1 ~ 1, train, grd, model = model.spherique)
+```
+
+
+# Exercice 2
+
+## Question 1
+
+```{r}
+# Charger les données
+load("data/TC_MP.RData")  
+library(sf)
+library(sp)
+library(tmap)      
+library(ggplot2)   
+
+# 1.a Statistiques descriptives
+summary(map@data[, c("TxDC", "Tx_H_MOY", "Tx_CH_MOY")])
+
+# 1.b Histogrammes
+par(mfrow=c(1,3))
+hist(map$TxDC, main="Histogramme TxDC", xlab="Taux décès prématurés", col="lightblue")
+hist(map$Tx_H_MOY, main="Histogramme Tx_H_MOY", xlab="% hommes", col="lightgreen")
+hist(map$Tx_CH_MOY, main="Histogramme Tx_CH_MOY", xlab="Taux de chômage (%)", col="lightcoral")
+
+# 1.c Cartes de répartition spatiale
+map_sf = st_as_sf(map) 
+class(map_sf) 
+
+ggplot() + 
+  geom_sf(data = map_sf, aes(fill = TxDC)) +
+  theme_bw()
+
+ggplot() + 
+  geom_sf(data = map_sf, aes(fill = Tx_H_MOY)) +
+  theme_bw()
+
+ggplot() + 
+  geom_sf(data = map_sf, aes(fill = Tx_CH_MOY)) +
+  theme_bw()
+
+```
+
+## Question 2
+
+```{r}
+library(spdep)
+nb <- poly2nb(map)
+lw <- nb2listw(nb, style="W")  
+
+# Test de Moran
+moran.test(map$TxDC, lw)
+```
+L'indice de Moran = 0.442 : La valeur est positive et assez élevée, ce qui indique que les départements ayant un taux de décès prématurés élevé sont entourés d’autres départements avec des taux élevés, et inversement pour les départements avec des taux faibles.
+
+p-value ≈ 2.94 × 10⁻¹² : très significative, donc l’autocorrélation spatiale observée n’est pas due au hasard.
+
+Conclusion : Le TxDC n’est pas distribué de manière aléatoire dans l’espace. Il existe une structuration spatiale : certaines régions concentrent des taux élevés ou faibles de décès prématurés.
+
+
+## Question 3
+
+Nous utilisons un modèle de régression linéaire car la variable à expliquer, TxDC, est continue, et les variables explicatives Tx_H_MOY et Tx_CH_MOY sont quantitatives. Ce modèle permet d’estimer l’effet moyen de chaque variable explicative sur le taux de décès prématurés tout en fournissant une interprétation directe des coefficients et de leur influence relative.
+
+```{r}
+model <- lm(TxDC ~ Tx_H_MOY + Tx_CH_MOY, data=map@data)
+summary(model)
+```
+
+## Question 4
+Chaque augmentation de 1 % de la proportion d’hommes dans un département augmente le taux de décès prématurés de 3.36 pour 10 000 habitants.
+
+Chaque augmentation de 1 % du chômage augmente le taux de décès prématurés de 1.04 pour 10 000 habitants.
+
+Les deux variables ont donc un effet positif sur le TxDC : plus d’hommes ou plus de chômage → plus de décès prématurés.

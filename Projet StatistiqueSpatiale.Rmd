@@ -1,0 +1,332 @@
+---
+title: "Projet - Analyse de données spatiales"
+author: "Abdel Said Chaihane, Ousmane Sene et Aissatou Diop"
+date: "2025-12-25"
+output:
+  pdf_document:
+    latex_engine: xelatex
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+
+```{r}
+# Librairies
+library(sf)
+library(sp)
+library(gstat)
+library(automap)
+library(gridExtra)
+```
+
+
+# Introduction
+
+Ce projet se concentre sur l’analyse de l’impact de l’utilisation du nitrogène comme engrais sur les rendements du maïs, mesurés en quintaux par hectare. Les données proviennent d’un champ situé en Argentine, caractérisé par quatre types de terrain distincts : Slope W, Hilltop, Slope E et Low E. L’objectif est de quantifier l’effet du nitrogène sur le rendement tout en tenant compte de la variabilité spatiale du champ, en utilisant des méthodes de statistiques spatiales, notamment le krigeage universel, afin de produire des cartes prédictives fiables des rendements et d’aider à la prise de décision agronomique.
+
+Pour atteindre cet objectif, le projet s’articule autour de plusieurs étapes :
+
+-   Étude variographique : analyse de la structure spatiale des rendements afin de caractériser l’autocorrélation et de choisir le modèle variogramme adapté.
+
+-   Prédiction par krigeage : utilisation du krigeage universel pour générer des cartes continues de rendement sur le champ.
+
+-   Évaluation de la qualité des prévisions : calcul d’indicateurs tels que RMSE, MAE, BIAS et R² pour mesurer la précision et la fiabilité des prédictions.
+
+-   Impact du nitrogène : comparaison des rendements prédits pour différentes quantités de nitrogène afin d’identifier les effets et la réponse optimale à l’engrais.
+
+
+## Importation des données
+
+```{r, echo=TRUE}
+Champ <- st_read("Données-20251225/rosas1999.shp")
+
+# Conversion en 'sp'
+Champ <- as(Champ, "Spatial")
+head(Champ@data)
+```
+
+
+## Visualisation des types de terrain
+
+```{r}
+spplot(Champ, 'TOPO', main = "Localisation des quatres types de terrains")
+```
+
+
+## Conversion de la variable 'YIELDS' en kg
+
+```{r, echo=TRUE}
+Champ$YIELD100 <- Champ$YIELD * 100
+head(Champ@data[, c('YIELD', 'YIELD100')])
+```
+
+
+## Visualisation du rendement en kilogramme par hectare
+
+```{r}
+spplot(Champ, 'YIELD100', main = "Rendement du maïs (kg/ha)")
+```
+
+La carte montre que le rendement du maïs varie fortement à l’intérieur du champ, allant d’environ 3000 à 9000 kg par hectare. Les zones 2 (Slope E) et 3 (Hilltop) présentent des rendements plus faibles, généralement compris entre 4 000 et 6 000 kg/ha, tandis que les zones 1 (Low E) et 4 (Slope W), situées vers les extrémités du champ, surtout à droite (Low E), affichent de meilleurs rendements, souvent entre 7 000 et 9 000 kg/ha. Cela indique que le champ ne produit pas de manière uniforme et que certaines zones offrent des conditions plus favorables à la culture du maïs que d’autres.
+
+
+## Visualisation de la quantité de nitrogène sur le champ en kilogramme par hectare
+
+```{r}
+spplot(Champ, 'N', main = "Quantité de nitrogène sur le champ (kg/ha)")
+```
+
+La carte de la quantité de nitrogène (kg/ha) montre une distribution structurée, alternant des zones à faibles et fortes doses, ce qui reflète un apport d’azote réalisé de manière régulière et contrôlée à l’échelle du champ. Cette même distribution de nitrogène est observée dans l’ensemble des zones du champ, ce qui indique une application identique des doses sur chaque type de terrain.
+
+
+# 1.1. Analyse et interprétation de l’autocorrélation spatiale globale dans la variable YIELDS100
+
+```{r}
+VariogrammeEmpirique <- variogram(YIELD100 ~ 1, Champ) 
+plot(VariogrammeEmpirique, main="Variogramme empirique")
+```
+
+Le variogramme empirique suggère une pépite d’environ 200 000, ce qui indique une variabilité initiale non expliquée ou possiblement liée à l’erreur de mesure. La semivariance augmente ensuite régulièrement avec la distance pour atteindre des valeurs proches de 1 100 000, correspondant au palier, qui représente la variabilité totale du rendement du maïs dans le champ. Le palier n’est atteint qu’à des distances proches de 0.0023, ce qui fournit une estimation du range. On n’observe pas clairement à partir de quelle distance l’indépendance spatiale est atteinte, ce qui indique que la dépendance spatiale du rendement s’exerce sur presque toute la longueur du champ.
+
+Dans l’ensemble, le variogramme montre une autocorrélation spatiale globale claire de la variable YIELDS100, ce qui signifie que les rendements proches dans l’espace sont similaires sur la majeure partie du champ.
+
+
+# 1.2. Analyse et interprétation de l’autocorrélation spatiale par type de terrain dans la variable YIELDS100
+
+```{r}
+# Projection en coordonnées métriques
+proj4string(Champ) <- CRS("+proj=longlat +datum=WGS84")
+Champ_utm <- spTransform(
+  Champ,
+  CRS("+proj=utm +zone=20 +south +datum=WGS84 +units=m +no_defs")
+)
+
+TypeSol <- c(1, 2, 3, 4)
+PlotsSol <- list()
+
+for (t in TypeSol) {
+  Champ_t <- Champ_utm[Champ_utm@data$TOPO == t, ]
+  VariogrammeE <- variogram(YIELD100 ~ 1, data = Champ_t)
+  
+  PlotsSol[[as.character(t)]] <- plot(VariogrammeE, main = paste("Type de terrain", t))
+}
+
+grid.arrange(grobs = PlotsSol, ncol = 2)
+```
+
+L’analyse des variogrammes expérimentaux de YIELDS100 met en évidence des comportements contrastés selon le type de terrain :
+
+-   **Type de terrain 1 (Low E) :** la pépite de 180 000, traduit une variabilité locale modérée ; le palier atteint environ 320 000, indiquant une variabilité totale moyenne des rendements ; la portée est comprise entre 70 et 80, montrant une autocorrélation spatiale qui se maintient sur de longues distances ;
+-   **Type de terrain 2 (Slope E) :** la pépite est estimée autour de 130 000 ; le palier est proche de 280 000, correspondant à une variabilité globale modérée ; la portée se situe entre 50 et 60, ce qui signifie que la dépendance spatiale disparaît à une distance intermédiaire ;
+-   **Type de terrain 3 (Hilltop) :** la pépite est élevée, autour de 250 000, indiquant une forte hétérogénéité locale ; le palier atteint environ 450 000, traduisant une grande variabilité des rendements ; la portée est courte par rapport au type 1 et 2, compris entre 20 et 30, ce qui révèle une autocorrélation spatiale faible et rapidement perdue ;
+-   **Type de terrain 4 (Slope W) :** la pépite carrément à 0, signifie qu’il n’y a quasiment pas de variabilité à très courte distance ; le palier est élevé, autour de 480 000, indiquant une forte variabilité totale ; la portée, estimé entre 70 et 80, met en évidence une dépendance spatiale marquée des rendements malgré cette forte hétérogénéité.
+
+En conclusion, l’autocorrélation spatiale de YIELDS100 dépend fortement du type de terrain : elle est marquée et persistante pour les terrains 1 (Low E) et 4 (Slope W), intermédiaire pour le terrain 2 (Slope E), et faible pour le terrain 3 (Hilltop) en raison d’une forte variabilité locale.
+
+
+# 2.1. Construiction de l’estimation du modèle et interprétation des résultats
+
+
+$$
+YIELDS100 = \beta_0 + \beta_1 N + \beta_2 N^2 + \beta_3 TOP2 + \beta_4 TOP3 + \beta_5 TOP4 + \varepsilon
+$$
+
+
+```{r, echo=TRUE}
+# Modele
+ModelYIELD100 <- lm(
+  YIELD100 ~ N + N2 + TOP2 + TOP3 + TOP4,
+  data = Champ_utm
+)
+
+summary(ModelYIELD100)
+
+```
+
+Le modèle linéaire quadratique avec variables indicatrices des types de terrain explique environ 60% de la variabilité des rendements de maïs (R² = 0,60). L’effet de chaque variable est le suivant :
+
+-   **Intercept (6597)** : rendement moyen pour le terrain Low E avec N = 0 kg/ha\
+-   **N (11,44)** : chaque kg/ha supplémentaire de nitrogène augmente le rendement d’environ 11,4 kg/ha\
+-   **N² (-0,0351)** : effet quadratique négatif, indiquant une diminution progressive du rendement pour des doses très élevées de nitrogène\
+-   **TOP2 – Slope E (-631,6)** : rendement moyen inférieur d’environ 632 kg/ha par rapport à Low E\
+-   **TOP3 – Hilltop (-1769)** : rendement moyen inférieur d’environ 1770 kg/ha par rapport à Low E\
+-   **TOP4 – Slope W (-526,5)** : rendement moyen inférieur d’environ 527 kg/ha par rapport à Low E
+
+Tous les coefficients sont très significatifs (p \< 0,001)
+
+
+# 2.2. Décomposition des données en deux ensembles (entrainement 80% et validation 20%)
+
+```{r, echo=TRUE}
+set.seed(123)
+
+NombreLigne <- nrow(Champ)
+RandomID <- sample(1:NombreLigne, size = 0.8 * NombreLigne)
+
+Train <- Champ_utm[RandomID, ]
+Test  <- Champ_utm[-RandomID, ]
+```
+
+
+# 2.3. Prévision de la variable YIELDS100
+
+
+### Variogramme experimentale sur les données d'entrainement
+
+```{r}
+# Selection automatique du modêle
+plot(autofitVariogram(YIELD100 ~ 1,Champ_utm))
+autofitVariogram(YIELD100 ~ 1,Champ_utm)$var_model
+```
+
+Le modèle variogramme choisi est **Stein (Ste)**, ce qui indique que les rendements de maïs sont autocorrélés sur de longues distances (\~6 km) avec une micro-variabilité faible, et que la corrélation diminue progressivement avec la distance. Ce modèle servira de base pour l’ajustement des variogrammes et le krigeage afin de produire des cartes prédictives des rendements.
+
+
+### Ajustement du variogramme
+
+```{r}
+vario.experimentale <- variogram(YIELD100 ~ 1, Train)
+
+model.ste <- fit.variogram(vario.experimentale, vgm("Ste"))
+plot(vario.experimentale, model = model.ste, main="Ajustement du variogramme (Modèle Ste)")
+
+model.ste
+```
+
+Après ajustement, le modèle variogramme retenu reste Stein (Ste), avec un nugget faible (249305), un sill élevé (21109251) représentant la variance totale des rendements, et une range de 9220 m montrant que les rendements restent autocorrélés sur de longues distances (\~9 km). Ce modèle ajusté est donc bien adapté pour le krigeage et permet de produire des cartes prédictives fiables des rendements en tenant compte de la structure spatiale du champ.
+
+
+### Krigeage
+
+Le krigeage universel a été retenu car le rendement du maïs présente une tendance spatiale marquée, liée à l’apport en nitrogène ainsi qu’aux caractéristiques des différents types de terrain Ces facteurs induisent une moyenne spatiale non constante, ce qui rend l’hypothèse du krigeage simple ou ordinaire inadaptée. Le krigeage universel permet de modéliser explicitement cette tendance à l’aide d’une régression linéaire intégrant les covariables agronomiques et pédologiques, tout en prenant en compte l’autocorrélation spatiale résiduelle à travers un variogramme. Cette approche combinée assure une meilleure représentation des mécanismes expliquant la variabilité du rendement et conduit à des prédictions spatiales plus fiables.
+
+```{r, echo=TRUE}
+KrigeUniverselle <- krige(
+  YIELD100 ~ N + N2 + TOP2 + TOP3 + TOP4,
+  locations = Train,
+  newdata = Test,
+  model = model.ste
+)
+```
+
+
+### Affichage des prédiction sur les données de test
+
+```{r}
+head(KrigeUniverselle@data)
+
+spplot(KrigeUniverselle, "var1.pred", at = seq(4500, 9000, length = 100))
+```
+
+
+### Découpage des prédiction par type de terrain sur les données de test
+
+```{r}
+KrigeUniverselle$TOPO <- Test$TOPO
+
+TypeSol <- c(4, 3, 2, 1)
+PlotsSol <- list()
+
+for (z in TypeSol) {
+  PredictionType <- KrigeUniverselle[KrigeUniverselle$TOPO == z, ]
+  PlotsSol[[as.character(z)]] <-
+    spplot(PredictionType, "var1.pred",
+           main = paste("Champ de type :", z),
+           at = seq(4500, 9000, length = 100))
+}
+
+grid.arrange(grobs = PlotsSol, ncol = 2)
+```
+
+Les cartes de prédiction du rendement du maïs sur les données de test, obtenues par krigeage universel en tenant compte de la quantité de nitrogène (kg/ha) appliquée et du type de terrain, montrent des différences marquées entre les terrains : les terrains de type 1 (Low E) et 4 (Slope W) présentent globalement des rendements plus élevés, suggérant une meilleure réponse du maïs à l’apport en azote dans ces conditions pédologiques ; le terrain de type 2 (Slope E) affichent des rendements intermédiaires, traduisant une réponse modérée à la fertilisation azotée ; en revanche, le terrain de type 3 (Hilltop) se caractérisent par des rendements plus faibles et plus homogènes, indiquant une efficacité moindre de l’azote ou des contraintes pédologiques limitant la production. Le krigeage universel permet ainsi d’intégrer l’effet combiné du nitrogène et de la structure spatiale, conduisant à des prédictions cohérentes et spatialement structurées du rendement du maïs.
+
+
+# 2.4. Evaluation de la qualité de la prévision
+
+```{r}
+Error <- KrigeUniverselle$var1.pred - Test$YIELD100
+
+RMSE <- sqrt(mean(Error^2))
+MAE  <- mean(abs(Error))
+BIAS <- mean(Error)
+R2 <- cor(Test$YIELD100, KrigeUniverselle$var1.pred)^2
+
+ind <- c(RMSE = RMSE, MAE = MAE, BIAS = BIAS, R2 = R2)
+print(ind)
+```
+
+-   **RMSE (330,6)** : l’erreur quadratique moyenne indique que les prédictions du modèle s’écartent en moyenne d’environ 331 kg/ha des rendements observés, ce qui reflète une bonne précision globale compte tenu de l’échelle des rendements.
+
+-   **MAE (247,7)** : l’erreur absolue moyenne montre qu’en moyenne, la prédiction diffère de la valeur observée d’environ 248 kg/ha, confirmant une performance prédictive satisfaisante et moins sensible aux valeurs extrêmes que le RMSE.
+
+-   **BIAS (−16,9)** : le biais légèrement négatif indique une faible sous-estimation moyenne des rendements par le modèle, mais cette sous-estimation reste négligeable au regard de la variabilité globale des rendements.
+
+-   **R² (0,872)** : le coefficient de détermination montre que 87,2 % de la variabilité des rendements observés est expliquée par les valeurs prédites, traduisant une excellente capacité prédictive du krigeage universel.
+
+Dans l’ensemble, ces indicateurs confirment que le modèle présente une très bonne qualité prédictive, avec des erreurs modérées, un biais quasi nul et une forte capacité à restituer la variabilité spatiale des rendements, ce qui valide son utilisation pour l’analyse de l’impact du nitrogène et la cartographie spatiale des rendements du maïs.
+
+```{r}
+plot(Test$YIELD100, KrigeUniverselle$var1.pred,
+     xlab = "YIELDS100 observé",
+     ylab = "YIELDS100 prédit (krigeage)",
+     main = "Qualité de la prévision")
+abline(0, 1, col = "red")
+
+```
+
+Le nuage de points représentant les rendements **observés** en fonction des rendements **prédits** par krigeage universel montre une relation linéaire forte, avec une majorité des points proches de la droite, ce qui indique une bonne capacité du modèle à reproduire les valeurs observées. La dispersion autour de la droite suggère toutefois la présence d’erreurs de prédiction, plus marquées pour les rendements très faibles ou très élevés, traduisant une légère sous-estimation des rendements élevés et une légère surestimation des rendements faibles. Globalement, ce graphique confirme que le modèle fournit des prédictions cohérentes et fiables du rendement du maïs, tout en conservant une incertitude résiduelle liée à la variabilité spatiale et aux facteurs non pris en compte.
+
+
+# Impacte du Nitrogène : Comparaison avec des quantités de nitrogène differentes (N = 50 et N = 150)
+
+```{r}
+# N = 50
+TestN50 <- Test
+TestN50$N  <- 50
+TestN50$N2 <- 50^2
+
+# N = 150
+TestN150 <- Test
+TestN150$N  <- 150
+TestN150$N2 <- 150^2
+
+# Krigeage N = 50
+KrigeN50 <- krige(
+  YIELD100 ~ N + N2 + TOP2 + TOP3 + TOP4,
+  locations = Train,
+  newdata = TestN50,
+  model = model.ste
+)
+
+# Krigeage N = 150
+KrigeN150 <- krige(
+  YIELD100 ~ N + N2 + TOP2 + TOP3 + TOP4,
+  locations = Train,
+  newdata = TestN150,
+  model = model.ste
+)
+```
+
+```{r}
+grid.arrange(
+spplot(KrigeN50["var1.pred"], main = "Rendement prédit (N = 50 kg/ha)",
+       at = seq(4500, 9000, length = 100)),
+spplot(KrigeN150["var1.pred"], main = "Rendement prédit (N = 150 kg/ha)",
+       at = seq(4500, 9000, length = 100)),
+ncol = 1)
+
+```
+
+La comparaison des cartes de rendement prédit pour N = 50 kg/ha et N = 150 kg/ha montre une augmentation globale du rendement du maïs avec l’augmentation de la dose de nitrogène. Toutefois, malgré une quantité de nitrogène identique, on observe des terrains présentant des rendements plus élevés (Low E et Slope W) et d’autres des rendements plus faibles (Slope E et Hilltop). Cela montre que l’effet du nitrogène sur le rendement du maïs dépend fortement du type de terrain. Certains terrains valorisent mieux l’apport en azote, tandis que d’autres présentent des contraintes. 
+
+
+# Conclusion
+
+Ce projet a permis d’analyser l’impact de l’apport en nitrogène sur les rendements du maïs dans un champ agricole en Argentine caractérisé par quatre types de sols distincts (Slope W, Hilltop, Slope E et Low E). Les résultats montrent que l’augmentation de la quantité de nitrogène entraîne globalement une hausse du rendement du maïs, confirmant le rôle clé de la fertilisation azotée. Toutefois, pour une même dose de nitrogène, des différences de rendement persistent selon le type de sol, mettant en évidence une interaction marquée entre la fertilisation et les caractéristiques pédologiques. En particulier, certains sols présentent des rendements plus élevés (Low E et Slope W), tandis que d’autres se révèlent moins productifs (Slope E et Hilltop). L’utilisation de méthodes géostatistiques, notamment le krigeage universel, a permis de modéliser la structure spatiale des rendements en intégrant à la fois l’effet du nitrogène et celui du sol, fournissant ainsi des prédictions cohérentes et spatialement structurées. Ces résultats soulignent l’intérêt d’une gestion différenciée de la fertilisation, adaptée aux types de sols, afin d’optimiser les rendements tout en limitant les apports excessifs d’azote.

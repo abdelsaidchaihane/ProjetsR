@@ -1,0 +1,435 @@
+---
+title: "Projet Econometrie du risque"
+author: "Ousmane Sene et Abdel Said Chaihane"
+date: "2025-12-31"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r}
+rm(list=ls())
+```
+
+
+# Introduction
+
+Les accidents de la route impliquant des cyclistes constituent un enjeu majeur de sécurité routière, en raison de la vulnérabilité particulière de ce mode de déplacement face aux véhicules motorisés. En France, selon les données de la Sécurité routière, plus de 200 cyclistes décèdent chaque année et plusieurs dizaines de milliers sont blessés, parfois grièvement. L’essor de la pratique du vélo, tant en milieu urbain que hors agglomération, renforce l’importance de mieux comprendre les facteurs associés à la gravité des blessures.
+
+Ce projet s’appuie sur la base nationale des accidents corporels de la route de l’année 2024, qui recense l’ensemble des accidents impliquant un cycliste conducteur, qu’il s’agisse d’une bicyclette classique ou d’un vélo à assistance électrique. L’objectif est d’expliquer et de prédire la gravité des blessures subies par les cyclistes à l’aide de modèles logit ordonnés, adaptés au caractère ordonné de la variable d’intérêt.
+
+Parmi le grand nombre d’informations disponibles dans la base, l’analyse se concentre sur un sous-ensemble de variables sélectionnées pour leur pertinence au regard de la problématique étudiée. Ces variables décrivent les caractéristiques du cycliste (âge, sexe), les équipements de sécurité (port du casque et du gilet), le type de vélo, l’environnement de circulation (conditions de luminosité, accident en ou hors agglomération) ainsi que l’implication de véhicules motorisés (voiture, poids lourd, moto).
+
+Le travail comprend une exploration descriptive des données, une stratégie de sélection et d’estimation des modèles, l’interprétation des résultats, ainsi qu’une évaluation comparative des performances prédictives, l’ensemble étant réalisé à l’aide du logiciel R.
+
+# Librairies
+
+```{r, echo = TRUE}
+library(MASS)
+library(pROC)
+```
+
+# Importation des donnés
+
+```{r, echo = TRUE}
+# Importation des données
+Velo <- read.csv('velo.csv',
+                 header = TRUE,
+                 sep = ';')
+
+head(Velo)
+```
+
+# Factorisation des variables
+
+```{r, echo = TRUE}
+# Création de la variable âge
+Velo$age <- 2024 - Velo$an_nais
+
+# Variable dépendante ordinale (ordre important)
+Velo$grav <- factor(Velo$grav,
+                    levels = c(4, 3, 2),
+                    labels = c("Léger", "Hospitalisé", "Tué"),
+                    ordered = TRUE)
+
+# Transformation en facteurs
+Velo$sexe   <- factor(Velo$sexe, levels = c(1, 2), labels = c("Homme", "Femme"))
+Velo$casque <- factor(Velo$casque, levels = c(0, 1), labels = c("Non", "Oui"))
+Velo$gilet  <- factor(Velo$gilet, levels = c(0, 1), labels = c("Non", "Oui"))
+Velo$agg    <- factor(Velo$agg, levels = c(1, 2), labels = c("Non", "Oui"))
+Velo$catv   <- factor(Velo$catv, levels = c(1, 80), labels = c("Bicyclette", "VAE"))
+Velo$lum    <- factor(Velo$lum, levels = c(1, 2, 3), labels = c("Jour", "LumMoy", "Nuit"))
+Velo$voiture <- factor(Velo$voiture, levels = c(0, 1), labels = c("Non", "Oui"))
+Velo$PL     <- factor(Velo$PL, levels = c(0, 1), labels = c("Non", "Oui"))
+Velo$moto   <- factor(Velo$moto, levels = c(0, 1), labels = c("Non", "Oui"))
+```
+
+# Repartition de la gravité des blessures
+
+```{r}
+# Distribution de la gravité
+table(Velo$grav)
+
+# Barplot
+barplot(table(Velo$grav),
+        main = "Repartition de la gravité des blessures",
+        xlab = "Gravité",
+        ylab = "Effectifs",
+        col = "lightblue")
+```
+
+On remarque une forte différence de répartition entre les niveaux de gravité : les blessures légères sont très largement majoritaires, tandis que les hospitalisations sont moins fréquentes et que les accidents mortels restent rares, ce qui met en évidence un déséquilibre marqué entre les classes de gravité.
+
+# Lien entre la gravité et les variables
+
+## Lien entre la gravité et l'age 
+
+```{r}
+boxplot(
+    age ~ grav,
+    data = Velo,
+    main = "Âge selon la gravité",
+    xlab = "Gravité",
+    ylab = "Âge",
+    col = "#F54927")
+```
+
+On observe que l’âge moyen augmente avec la gravité des blessures. Les personnes légèrement blessées sont en moyenne plus jeunes, tandis que les personnes hospitalisées sont plus âgées. Les personnes décédées sont en moyenne les plus âgées, ce qui suggère que la gravité des conséquences augmente avec l’âge.
+
+## Lien entre la gravité et les autres variables factorielles
+
+```{r}
+VariablesFactorielle <- c("sexe", "casque", "gilet", "agg",
+                          "catv", "lum", "voiture", "PL", "moto")
+
+par(mfrow = c(3, 3),
+    mar = c(2, 3, 1, 1),   
+    cex.main = 0.9,
+    cex.lab = 0.8,
+    cex.axis = 0.7)
+
+# Lien entre grv et les variables categorielles
+for (var in VariablesFactorielle) {
+
+  # Tableau croisé
+  tab <- table(Velo$grav, Velo[[var]])
+
+  # Barplot
+  barplot(tab, beside = TRUE,
+          main = paste("Gravité des blessures selon", var),
+          xlab = "Gravité",
+          ylab = "Effectifs",
+          col = c("#8FFAAB", "#637EF8", "#F86390"))
+  legend("topright",
+       legend = levels(Velo$grav),
+       fill = c("#8FFAAB", "#637EF8", "#F86390"),
+       horiz = F,
+       bty = "n",
+       cex = 0.7)
+}
+```
+
+Globalement, les blessures légères sont largement majoritaires dans toutes les situations. Les hommes sont plus souvent impliqués que les femmes, et ils présentent aussi plus de blessures graves. Le port du casque et du gilet est associé à moins de blessés graves et tués. Les accidents sont plus fréquents en agglomération, surtout avec des blessures légères. Les cyclistes en bicyclette classique sont plus nombreux que ceux en VAE. Les accidents ont lieu majoritairement de jour. La présence de véhicules lourds PL ou de motos est rare, mais lorsqu’ils sont impliqués, les blessures peuvent être plus graves.
+
+# Autres liens possibles entre les variables
+
+## Age 
+
+```{r}
+VariablesFactorielle <- c("casque", "gilet", "agg",
+                          "lum")
+
+par(mfrow = c(2, 2))
+
+for (var in VariablesFactorielle) {
+  boxplot(
+    Velo$age ~ Velo[[var]],
+    main = paste("Âge selon", var),
+    xlab = paste(var),
+    ylab = "Âge",
+    col = "#F54927")
+}
+
+```
+
+-   Âge et port du casque : parmi les cyclistes ayant eu un accident, ceux portant un casque sont en moyenne légèrement plus âgés que ceux n’en portant pas.
+
+-   Âge et port du gilet : parmi les cyclistes accidentés, le port du gilet concerne également des individus un peu plus âgés en moyenne, bien que la différence reste modérée.
+
+-   Âge et agglomération : les cyclistes accidentés hors agglomération sont globalement plus âgés que ceux accidentés en agglomération.
+
+-   Âge et luminosité : les accidents survenant de jour concernent des cyclistes légèrement plus âgés en moyenne, tandis que les accidents de nuit impliquent des cyclistes plus jeunes, avec toutefois une plus grande dispersion des âges.
+
+## Lien avec le port ou non du casque
+
+```{r}
+par(mfrow = c(1, 2))
+
+for (var in c("agg", "gilet")) {
+
+  # Tableau croisé
+  tab <- table(Velo$casque, Velo[[var]])
+
+  # Barplot
+  barplot(tab, beside = TRUE,
+          main = paste("Port du casque selon", var),
+          xlab = paste(var),
+          ylab = "Effectifs",
+          col = c("#8FFAAB", "#637EF8"))
+  legend("topright",
+       legend = levels(Velo$casque),
+       fill = c("#8FFAAB", "#637EF8"),
+       horiz = F,
+       bty = "n",
+       cex = 0.7)
+}
+```
+
+-   Hors agglomération, on observe davantage d’accidents lorsque le casque est porté que lorsqu’il ne l’est. En agglomération, à l’inverse, les accidents sont plus nombreux sans casque qu’avec casque.
+
+-   Il existe un lien entre le port du gilet et le port du casque. Les personnes qui ne portent pas de gilet sont plus souvent impliquées dans des accidents sans casque, tandis que celles qui portent un gilet portent plus fréquemment aussi un casque.
+
+## Lien avec l'implication ou non d'une voiture
+
+```{r}
+par(mfrow = c(1, 2))
+
+for (var in c("PL", "moto")) {
+
+  # Tableau croisé
+  tab <- table(Velo$voiture, Velo[[var]])
+
+  # Barplot
+  barplot(tab, beside = TRUE,
+          main = paste("Voiture selon", var),
+          xlab = paste(var),
+          ylab = "Effectifs",
+          col = c("#8FFAAB", "#637EF8"))
+  legend("topright",
+       legend = levels(Velo$voiture),
+       fill = c("#8FFAAB", "#637EF8"),
+       horiz = F,
+       bty = "n",
+       cex = 0.7)
+}
+```
+
+-   Lorsque aucun poids lourd n’est impliqué, les accidents concernent le plus souvent une voiture. En revanche, lorsque un poids lourd est impliqué, les accidents se produisent plus souvent sans voiture.
+
+-   Dans les accidents de vélo, on observe un lien entre l’implication d’une moto et celle d’une voiture. Lorsque aucune moto n’est impliquée, les accidents concernent le plus souvent une voiture. En revanche, lorsque une moto est impliquée, les accidents se produisent plus fréquemment sans voiture
+
+# Lien entre la luminosité et l'agglomeration
+
+```{r}
+par(mfrow = c(1, 2))
+
+for (var in c("agg", "gilet")) {
+
+# Tableau croisé
+tab <- table(Velo$lum, Velo[[var]])
+
+# Barplot
+barplot(tab, beside = TRUE,
+        main = paste("Lien entre la luminosité et ", var),
+        xlab = paste(var),
+        ylab = "Effectifs",
+        col = c("#8FFAAB", "#637EF8", "#F86390"))
+legend("topright",
+     legend = levels(Velo$lum),
+     fill = c("#8FFAAB", "#637EF8", "#F86390"),
+     horiz = F,
+     bty = "n",
+     cex = 0.7)
+}
+```
+
+-   Hors agglomération, les accidents se produisent majoritairement le jour, puis sous une luminosité moyenne, et enfin la nuit. En agglomération, les accidents ont également lieu surtout le jour, mais ils sont ensuite plus nombreux la nuit qu’en conditions de luminosité moyenne.
+
+-   Les accidents concernant des personnes ne portant pas de gilet sont globalement plus nombreux, et surviennent principalement le jour, puis la nuit, et plus rarement en luminosité moyenne. À l’inverse, les personnes portant un gilet sont impliquées dans moins de cas.
+
+# Repartition du jeu de donnée (Train/Test)
+
+```{r, echo = TRUE}
+# Variables selectionnées
+SelectVariables <- c('grav', 'age', 'sexe', 'casque', 'gilet', 'catv',
+         'voiture', 'PL', 'moto', 'lum', 'agg')
+
+# Nouveau data frame
+SelectVelo <- Velo[SelectVariables]
+
+# Séparation train / test
+set.seed(123)  
+
+Index <- sample(1:nrow(SelectVelo), size = 0.8 * nrow(SelectVelo))
+
+Train <- SelectVelo[Index, ]
+Test  <- SelectVelo[-Index, ]
+```
+
+# Choix des modèles
+
+## Modele 1 : Avec toutes les variables
+
+Nous commençons par estimer un modèle logit ordonné complet intégrant l’ensemble des variables explicatives retenues, qui sert de point de référence pour la sélection du modèle optimal.
+
+```{r}
+# Premier Model
+ModelComplet <- polr(grav ~ age + sexe + casque + gilet + catv +
+                     voiture + PL + moto + lum + agg,
+             data = Train, method = "logistic")
+
+summary(ModelComplet)
+```
+
+## Choix du deuxième modèle avec une procedure backward 
+
+```{r, echo = TRUE}
+ModelBackward <- step(
+  ModelComplet,
+  scope = list(
+  lower = grav ~ 1,
+  upper = grav ~ age + sexe + casque + gilet + catv +
+                 voiture + PL + moto + lum + agg
+  ),
+  direction = "backward",
+  trace = TRUE
+)
+```
+
+À l’issue de la procédure de sélection backward, le modèle retenu inclut les variables âge, sexe, port du gilet, implication d’une voiture, d’un poids lourd, d’une moto, luminosité et agglomération. Les variables port du casque et catégorie de vélo (catv) ont été supprimées, leur retrait entraînant une amélioration du critère AIC.
+
+## Modele 2 : Sans les variables casque et catv (non significatives)
+
+```{r}
+# Deuxième Model
+Model2 <- polr(formula = grav ~ age + sexe + gilet + voiture + 
+    PL + moto + lum + agg, data = Train, method = "logistic")
+
+# Comparaison avec le premier Model
+anova(ModelComplet, Model2)
+```
+
+La comparaison entre le modèle réduit (sans casque et catv) et le modèle complet (avec toutes les variables) montre que l’ajout de ces deux variables n’améliore pas significativement l’ajustement du modèle. En effet, le test du rapport de vraisemblance donne une statistique de 0,257 pour 2 degrés de liberté, associée à une p-value de 0,88, largement supérieure au seuil de 5 %. On ne rejette donc pas l’hypothèse nulle selon laquelle les coefficients de casque et catv sont nuls. Cela justifie leur suppression et confirme que le modèle plus simple est préférable.
+
+## Modele 3 : Avec interaction (age*lum)
+
+```{r}
+# Troisieme Model
+ModelAgeGilet <- polr(grav ~ age*gilet + age + gilet + sexe + voiture + 
+    PL + moto + lum + agg, data = Train, method = "logistic")
+
+# Comparaison avec le deuxiëme Model
+anova(Model2, ModelAgeGilet)
+```
+
+La comparaison entre le modèle sans interaction et le modèle incluant l’interaction âge × gilet montre une amélioration significative de l’ajustement. Le test du rapport de vraisemblance est significatif (LR = 6,51 ; p-value = 0,011), ce qui conduit à rejeter l’hypothèse nulle (absence d’interaction). Cela indique que l’effet de l’âge sur la gravité des blessures dépend du port du gilet réfléchissant. L’introduction de cette interaction est donc statistiquement justifiée et améliore la qualité du modèle.
+
+## Strategie du choix des modèles
+
+La sélection du modèle a été réalisée selon une procédure backward, en partant d’un modèle logit ordonné complet incluant l’ensemble des variables explicatives. Les variables catv (catégorie de vélo) et le port du casque ont été retirées dans un premier temps en raison de leur non-significativité, et la validité de ces suppressions a été vérifiée par des tests du rapport de vraisemblance (anova). Par la suite, une interaction entre l’âge et le port du gilet a été introduite afin d’examiner un effet conjoint de ces variables sur la gravité des blessures, et son ajout a également été évalué à l’aide d’une comparaison anova avec le modèle sans interaction.
+
+# Comparaison des modèles avec le critère AIC
+
+```{r}
+AIC(ModelComplet, Model2, ModelAgeGilet)
+```
+
+Parmi les trois modèles testés, le modèle intégrant l’interaction entre l’âge et le port du gilet présente la valeur d’AIC la plus faible (5598,577). Le modèle excluant les variables *catv* (catégorie de vélo) et *casque* arrive en deuxième position avec un AIC légèrement supérieur (5603,090), tandis que le modèle complet est le moins performant selon ce critère (AIC = 5606,833). Ces résultats montrent que la suppression de variables non significatives, combinée à l’ajout ciblé d’une interaction pertinente, permet d’améliorer la qualité globale du modèle.
+
+# Interpretation du meilleur modèle
+
+```{r}
+summary(ModelAgeGilet)
+```
+- **Âge (0,024)** : plus l’âge du cycliste augmente, plus la probabilité de blessures graves augmente.
+- **Port du gilet (1,604)** : le port du gilet est associé à une gravité plus élevée des blessures.
+- **Interaction âge × gilet (-0,025)** : l’effet de l’âge sur la gravité est plus faible lorsque le gilet est porté.
+- **Sexe – Femme (-0,417)** : les femmes ont une probabilité plus faible de blessures graves que les hommes.
+- **Implication d’une voiture (-0,281)** : les accidents impliquant une voiture sont associés à une gravité plus faible.
+- **Implication d’un poids lourd (0,825)** : la présence d’un poids lourd augmente fortement la gravité des blessures.
+- **Implication d’une moto (-0,543)** : les accidents impliquant une moto sont associés à une gravité plus faible.
+- **Luminosité moyenne (0,264)** : les accidents survenant avec une luminosité moyenne sont plus graves que la situation de référence.
+- **Nuit (-0,297)** : les accidents survenant la nuit sont associés à une gravité plus faible.
+- **Agglomération (-1,457)** : les accidents en agglomération sont nettement moins graves que ceux hors agglomération.
+
+
+# Prédiction sur les données de test
+
+```{r, echo = TRUE}
+PredComplet <- predict(ModelComplet, Test, type = "class")
+Pred2 <- predict(Model2, Test, type = "class")
+PredAgeGilet <- predict(ModelAgeGilet, Test, type = "class")
+```
+
+# Matrice de confusion
+
+```{r}
+table(Test$grav, PredAgeGilet)
+```
+
+La matrice de confusion montre que le modèle prédit uniquement les modalités *Léger* et *Hospitalisé* et ne prédit jamais la modalité *Tué*. Toutes les observations réellement classées comme *Tué* sont donc mal classées, principalement en *Léger* ou *Hospitalisé*. Ce résultat s’explique par le fort déséquilibre des classes dans les données, la modalité *Tué* étant très minoritaire. Le modèle tend ainsi à favoriser les classes majoritaires afin de minimiser l’erreur globale de classification. Les performances sont satisfaisantes pour la classe *Léger* et plus limitées pour *Hospitalisé*, mais le modèle présente une faiblesse importante pour la détection des accidents mortels, ce qui constitue une limite majeure de l’étude.
+
+
+# Nombre de bien predits (vrais positifs) et accuracy
+
+```{r}
+# Bien predits
+BienPredits <- sum((PredAgeGilet == 'Léger') & (Test$grav == 'Léger')) + 
+  sum((PredAgeGilet == 'Hospitalisé') & (Test$grav == 'Hospitalisé')) + 
+  sum((PredAgeGilet == 'Tué') & (Test$grav == 'Tué'))
+
+BienPredits
+
+# Accuracy
+BienPredits / nrow(Test)
+```
+
+Le modèle permet de bien prédire 802 observations, soit une accuracy de 75,2 %, ce qui indique une capacité globale satisfaisante à classer la gravité des blessures. Toutefois, cette performance est principalement portée par la bonne prédiction des blessures légères et hospitalisées, tandis que la classe « Tué », très minoritaire, est peu, voire pas correctement prédite. Cette limite souligne l’impact du déséquilibre des classes sur les performances du modèle.
+
+# Problème de prédiction du niveau 'Tué' : Capacité de prédiction du niveau 'Tué' avec la courbe ROC
+
+```{r}
+ProbaAgeGilet <- predict(ModelAgeGilet, Test, type = "probs")
+
+ROCObjet <- roc(Test$grav == "Tué", ProbaAgeGilet[, "Tué"])
+
+plot(1 - ROCObjet$specificities,
+     ROCObjet$sensitivities,
+     type = "l",
+     xlab = "1 - Spécificité",
+     ylab = "Sensibilité",
+     main = "Courbe ROC",
+     lwd = 1)
+abline(0, 1, lty = 2, col = "gray")
+```
+
+La courbe ROC obtenue montre que le modèle est capable de discriminer correctement les accidents mortels (« Tué ») des autres niveaux de gravité. En effet, la courbe se situe largement au-dessus de la diagonale (classification aléatoire), ce qui indique une performance prédictive satisfaisante. La montée rapide de la sensibilité pour de faibles valeurs de $1-$spécificité suggère qu’il est possible d’identifier une proportion importante de décès tout en limitant le nombre de faux positifs. La forme globalement concave de la courbe et sa proximité avec le coin supérieur gauche traduisent une bonne capacité de discrimination du modèle, malgré la rareté de la modalité « Tué ».
+
+# Conclusion
+
+Cette étude analyse les déterminants de la gravité des blessures des cyclistes à partir des données nationales des accidents de la route de 2024. L’analyse exploratoire et la modélisation économétrique par modèles logit ordonnés mettent en évidence le rôle central de l’âge, des conditions de luminosité et de l’implication de véhicules motorisés, en particulier des poids lourds, dans l’augmentation du risque de blessures graves. La sélection des modèles, fondée sur une approche backward et des tests de rapport de vraisemblance, a conduit à un modèle offrant un bon compromis entre qualité d’ajustement et interprétabilité, comme l’indique l’amélioration de l’AIC. L’introduction d’une interaction entre l’âge et le port du gilet montre que l’effet des équipements de sécurité peut dépendre des caractéristiques du cycliste.
+
+La comparaison des performances prédictives sur des échantillons d’entraînement et de test met en évidence une capacité prédictive globalement satisfaisante, bien que la prédiction des accidents mortels reste limitée en raison de leur faible effectif. L’utilisation de la courbe ROC, appliquée à une classification binaire opposant les accidents mortels aux accidents non mortels, permet d’évaluer la capacité discriminante des modèles indépendamment du seuil de décision, tout en soulignant les limites liées au déséquilibre des classes. L’étude aurait néanmoins gagné à disposer d’informations supplémentaires, notamment sur la vitesse, les caractéristiques de l’infrastructure routière ou les conditions météorologiques, ainsi que de méthodes spécifiquement adaptées au traitement des événements rares, afin d’améliorer la robustesse et la performance prédictive des modèles.
+
+
+```{r}
+plot(1 - multiclass.roc(Test$grav, ProbaAgeGilet)
+$specificities,
+     multiclass.roc(Test$grav, ProbaAgeGilet)
+$sensitivities,
+     type = "l",
+     xlab = "1 - Spécificité",
+     ylab = "Sensibilité",
+     main = "Courbe ROC",
+     lwd = 1)
+abline(0, 1, lty = 2, col = "gray")
+```
+

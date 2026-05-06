@@ -1,0 +1,552 @@
+---
+title: "DM Apprentissage en grande dimension"
+author: "Abdel Said Chaihane"
+date: "2025-12-23"
+output:
+  html_document:
+    df_print: paged
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+
+```
+
+```{r}
+# Librairies
+library(MASS)
+library(faraway)
+library(lars)
+library(pls)
+library(glmnet)
+library(FactoMineR)
+library(factoextra)
+```
+
+# Exercice 1
+
+## 1. Chargement des données
+
+```{r}
+data(seatpos)
+dim(seatpos)
+head(seatpos)
+```
+
+## 2. Regard sur les données. On va expliquer hipcenter avec les autres
+
+variables de la BDD Age Age in years 
+Weight Weight in lbs 
+HtShoes Height in shoes in cm 
+Ht Height bare foot in cm 
+Seated Seated height in cm 
+Arm lower arm length in cm 
+Thigh Thigh length in cm 
+Leg Lower leg length in cm 
+hipcenter (centre de la hanche) horizontal distance of the midpoint of the hips from a fixed location in the car in mm
+
+## 3. certaines variables sont-elles très corrélées ? peu corrélées ?
+
+```{r}
+library(corrplot)
+round(cor(seatpos), 3)
+```
+
+On remarque que certaines variables sont très corrélées, en particulier
+celles décrivant la morphologie comme Ht, HtShoes, Seated, Leg, Arm et
+Weight, avec des corrélations fortes et positives proches de 1, tandis
+que hipcenter est fortement négativement corrélée à ces mêmes variables
+; à l’inverse, Age présente des corrélations faibles avec toutes les
+autres variables, indiquant une relation linéaire limitée.
+
+## 4. ACP sur les données Réaliser une analyse ECP complète. Axes retenus, analyse des résultats et interprétation des axes.
+
+```{r}
+require(FactoMineR)
+require(factoextra)
+PCA_seatpos = PCA(seatpos[,-9])
+PCA_seatpos$eig
+PCA_seatpos = prcomp(seatpos[,-9],center = TRUE,scale. = TRUE)
+
+fviz_eig(PCA_seatpos)
+fviz_contrib(PCA_seatpos, choice = "var", axes=1)
+fviz_contrib(PCA_seatpos, choice = "var", axes=2)
+fviz_cos2(PCA_seatpos, choice = "ind", axes=1)
+fviz_eig(PCA_seatpos)
+```
+
+## 5. Régression sur ces données (variable à expliquer "hipcenter") avec et sans intercept
+
+```{r}
+reg_seatpos_No_Intercept = lm(hipcenter ~ Age + Weight +
+                                HtShoes + Ht + Arm + Thigh + Leg + Seated -1 , data=seatpos)
+reg_seatpos = lm(hipcenter ~ Age + Weight + HtShoes + Ht + Arm +
+                   Thigh + Leg + Seated , data=seatpos)
+summary(reg_seatpos_No_Intercept)
+summary(reg_seatpos)
+```
+
+## 6. Analyser la régression linéaire.
+
+```{r}
+summary.lm(reg_seatpos)
+summary.lm(reg_seatpos_No_Intercept)
+```
+
+## 7. Analyse avec PCR
+
+```{r}
+library(pls)
+pcr_REG <- pcr(hipcenter ~ Age + Weight + HtShoes + Ht + Arm + Thigh + Leg + Seated, data=seatpos)
+summary(pcr_REG)
+pcr_REG$coefficients[,1 , ][, 1]
+```
+
+## 8. Analyse avec Ridge
+
+```{r}
+library(glmnet)
+colnames(seatpos)
+Y = seatpos$hipcenter
+Y
+X=seatpos
+X=X[, -9]
+X
+
+RIDGE.REG <- glmnet(y=Y, x=X , alpha=0)
+```
+
+### Vérification du modèle
+
+```{r}
+print(RIDGE.REG)
+summary(RIDGE.REG)
+plot(RIDGE.REG)
+```
+
+## 9. Analyse avec Lasso
+
+```{r}
+LASSO.REG <- glmnet(y=Y, x=X , alpha=1)
+## Vérifier le modèle
+print(LASSO.REG)
+summary(LASSO.REG)
+plot(LASSO.REG)
+```
+
+# Exercice 2
+
+## 1. Exploration des données
+
+```{r}
+library(ISLR)
+data(Hitters)
+dim(Hitters)
+head(Hitters)
+```
+
+## 2. Extraction les individus dont certaines données sont manquantes
+
+```{r}
+Hitters <- na.omit(Hitters)
+Hitters
+```
+
+## 3. Regroupement des variables explicatives dans une matrice X
+
+```{r, echo = TRUE}
+X <- model.matrix(Salary ~ ., Hitters)[, -1]
+
+```
+
+## 4. Ridge
+
+```{r, echo = TRUE}
+ridge.reg <- glmnet(X, Hitters$Salary, alpha=0)
+```
+
+## 5. Explication du parametre alpha
+
+Dans glmnet, le paramètre *alpha* détermine le type de régularisation
+appliquée au modèle : lorsque *alpha* = 0, on obtient une pénalisation
+Ridge qui réduit la variance en contractant les coefficients sans les
+annuler, lorsque *alpha* = 1, on obtient une pénalisation Lasso qui
+effectue une sélection de variables en mettant certains coefficients
+exactement à zéro.
+
+## 6. Lasso
+
+```{r, echo = TRUE}
+lasso.reg <- glmnet(X, Hitters$Salary, alpha=1)
+```
+
+### Grille des lambda
+
+```{r}
+lasso.reg$lambda
+ridge.reg$lambda
+```
+
+## 8. Evolution des paramètres en fonction des valeurs de lambda
+
+```{r}
+plot(lasso.reg, main = "Lasso")
+plot(ridge.reg, main = "Ridge")
+```
+
+# Exercice 3
+
+## 1. Calcul du risque quadratique en focntion de lambda
+
+```{r}
+ridge.reg.cv = cv.glmnet(X,Hitters$Salary,alpha=0)
+lasso.reg.cv = cv.glmnet(X,Hitters$Salary,alpha=1)
+par(mfrow=c(1,2))
+plot(ridge.reg.cv,main="Ridge")
+plot(lasso.reg.cv,main="Lasso")
+```
+
+## 2. Valeur de lambda sélectionnée et les coefficients de l’estimateur des coefficients de la régression
+
+```{r}
+lambda.opt.ridge = ridge.reg.cv$lambda.min
+coeffs.Ridge.cv = coef(ridge.reg.cv,s="lambda.min")
+coeffs.Ridge.cv
+```
+
+## 3. Même chose avec Lasso
+
+```{r}
+lambda.opt.lasso = lasso.reg.cv$lambda.min
+coeffs.Lasso.cv = coef(lasso.reg.cv,s="lambda.min")
+coeffs.Lasso.cv
+```
+
+## 4. "." devant certains paramètres dans la régression Lasso?
+
+Le “.” signale que la variable correspondante a été exclue du modèle par
+le Lasso, car la pénalisation a forcé son coefficient à zéro. Cette
+notation permet de repérer rapidement les variables sélectionnées
+(coefficients non nuls) et celles éliminées par la méthode.
+
+## 5. Selection lambda Lasso par BIC
+
+```{r}
+n <- length(Hitters$Salary)
+rss <- rep(NA, length(lasso.reg$lambda))
+df  <- rep(NA, length(lasso.reg$lambda))
+
+for (i in 1:length(lasso.reg$lambda)) {
+  pred <- predict(lasso.reg, s = lasso.reg$lambda[i], newx = X)
+  rss[i] <- sum((Hitters$Salary - pred)^2)
+  df[i]  <- lasso.reg$df[i]
+}
+
+BIC <- n * log(rss / n) + log(n) * df
+lambda_bic <- lasso.reg$lambda[which.min(BIC)]
+lambda_bic
+```
+
+La valeur $\lambda = 18{,}86719$, sélectionnée à l’aide du critère BIC,
+correspond à un niveau de pénalisation relativement élevé avec peu de
+variables sélectionnées ; le BIC pénalisant fortement la complexité, ce
+choix de $\lambda$ privilégie la simplicité du modèle tout en conservant
+un bon compromis entre qualité d’ajustement et sur-paramétrisation.
+
+# Exercice 4
+
+## 1. Séparation apprentissage / test
+
+```{r, echo = TRUE}
+set.seed(123)
+train <- sample(1:nrow(X), size= round(0.7*nrow(X), 0))
+Xtrain <- X[train,]
+Xtest <- X[-train,]
+Salarytrain <- Hitters$Salary[train]
+Salarytest <- Hitters$Salary[-train]
+```
+
+## 2. Prédiction
+
+```{r, echo = TRUE}
+pred_ridge <- predict(ridge.reg.cv, s="lambda.min", newx=Xtest)
+pred_lasso <- predict(lasso.reg.cv, s="lambda.min", newx=Xtest)
+```
+
+## 3. Erreur de prédiction
+
+```{r}
+mean((Salarytest - pred_ridge)^2)
+mean((Salarytest - pred_lasso)^2)
+```
+
+L’erreur quadratique moyenne du Lasso (79680.4) est inférieure à celle
+du Ridge (81359.75), ce qui indique que le modèle Lasso offre de
+meilleures performances de prédiction sur l’échantillon test,
+probablement grâce à sa capacité de sélection de variables, lui
+permettant de réduire le sur-ajustement par rapport au modèle Ridge.
+
+### Visualisation
+
+```{r}
+par(mfrow = c(1,2))
+
+plot(Salarytest, pred_ridge,
+     xlab="Observé", ylab="Prédit",
+     main="Ridge", pch=19, col="steelblue")
+abline(0,1,col="red",lwd=2)
+
+plot(Salarytest, pred_lasso,
+     xlab="Observé", ylab="Prédit",
+     main="Lasso", pch=19, col="steelblue")
+abline(0,1,col="red",lwd=2)
+```
+
+## 4. Construction d'une boite à moustache des erreurs pour les quatre estimateurs
+
+```{r}
+# Prédictions OLS
+lm_model <- lm(Salarytrain ~ Xtrain)
+pred_ols <- predict(lm_model, newdata = data.frame(Xtest))
+
+# Prédictions Lasso avec lamba BIC
+pred_lasso_bic <- predict(lasso.reg, s = lambda_bic, newx = Xtest)
+pred_lasso_bic <- as.numeric(pred_lasso_bic)
+```
+
+### Visualisation
+
+```{r}
+par(mfrow = c(1,1))
+boxplot(
+  (Salarytest - pred_ols)^2,
+  (Salarytest - as.numeric(pred_ridge))^2,
+  (Salarytest - as.numeric(pred_lasso))^2,
+  (Salarytest - pred_lasso_bic)^2,
+  names=c("OLS", "Ridge", "Lasso","Lasso BIC")
+)
+```
+
+# Exercice 5
+
+## 1. Démonstration
+
+Soit $X$ une variable aléatoire réelle de densité $f$ et $Q_\alpha$ son
+quantile d'ordre $\alpha \in (0,1)$. La fonction de perte associée au
+quantile est :
+
+$$
+\ell_\alpha(t) = |t| + (2\alpha - 1) t, \quad t \in \mathbb{R}.
+$$
+
+On pose $L(t) := \mathbb{E}[\ell_\alpha(X - t)]$. En dérivant, on
+obtient :
+
+$$
+\frac{d}{dt} L(t) = \int_\mathbb{R} \frac{d}{dt} \ell_\alpha(x - t) f(x) dx
+= 2 F_X(t) - 2\alpha,
+$$
+
+où $F_X(t) = \mathbb{P}(X \le t)$ est la fonction de répartition de $X$.
+
+Minimiser $L(t)$ revient à résoudre $\frac{d}{dt} L(t) = 0$, ce qui
+donne :
+
+$$
+F_X(t) = \alpha.
+$$
+
+Ainsi, le minimiseur est le quantile d'ordre $\alpha$ :
+
+$$
+\boxed{Q_\alpha = \arg\min_{t \in \mathbb{R}} \mathbb{E}[\ell_\alpha(X - t)]}.
+$$
+
+## 2. Construction d'une fonction "lalpha" qui donne la valeur de la fonction de perte
+```{r, echo = TRUE}
+lalpha = function(alpha, t){
+  AAA = abs(t) + (2*alpha - 1)*t
+  return(AAA)
+}
+```
+
+## 3. Estimateur empirique
+```{r, echo = TRUE}
+loss_emp <- function(t, X, alpha){
+  sum(lalpha(alpha, X - t))
+}
+```
+
+## 4. Le quantile empirique
+```{r}
+Qhat <- optimize(loss_emp, interval=c(min(X), max(X)), X=X, alpha=0.5)$minimum
+Qhat
+```
+Le quantile empirique d'ordre 0.5 (la médiane) est égal à 52. Cela signifie que **la moitié des observations de l'échantillon est inférieure ou égale à 52**. La médiane fournit ainsi une mesure robuste de la tendance centrale de l'échantillon, moins sensible aux valeurs extrêmes que la moyenne.
+
+## 5. Vérification de la convergence en loi à l’aide d’une simulation
+```{r}
+n <- 1000
+
+Qhat <- numeric(n)
+
+for(i in 1:n){
+  X <- rnorm(n)
+  Qhat[i] <- quantile(X, 0.5)
+}
+
+hist(sqrt(n)*(Qhat - 0))
+```
+Cette simulation confirme que l'estimateur \(\hat{Q}\) converge en loi vers une **distribution normale** lorsque la taille de l'échantillon \(n\) augmente. La transformation par \(\sqrt{n}\) permet de **stabiliser la variance** et d'observer cette convergence vers une loi normale centrée.  
+
+C'est un résultat fondamental en statistique, qui justifie l'utilisation des **intervalles de confiance asymptotiques** pour le quantile.
+
+
+# Exercice 6
+
+## 1. Description du jeu de données
+```{r}
+library(MASS)
+data(mcycle)
+dim(mcycle)
+str(mcycle)
+summary(mcycle)
+sum(is.na(mcycle))
+```
+
+## 2. Méthodes d’estimation (globale et locale)
+
+### Méthodes globales
+- **Régression linéaire globale** : ajuste une droite sur toutes les données pour minimiser l’erreur quadratique. Simple et interprétable, mais limitée si la relation est non linéaire. 
+
+```{r}
+time_grid <- seq(from = min(mcycle$times), 
+                 to = max(mcycle$times), 
+                 length.out = 300)
+lm_lin <- lm(accel ~ times, data=mcycle)
+summary(lm_lin)
+pred_lin <- predict(lm_lin,
+                      newdata = data.frame(times = time_grid))
+plot(mcycle$times, mcycle$accel, pch = 20)
+lines(time_grid, pred_lin, col = "red")
+```
+
+- **Régression polynomiale** : ajuste un polynôme de degré \(d\) sur l’ensemble des données, capturant des relations non linéaires. Un degré trop élevé peut provoquer un sur-apprentissage.
+
+```{r}
+DegresPolynome <- c(2, 5, 7, 8, 9, 10)
+
+par(mfrow = c(2, 3))
+for (Degres in DegresPolynome) {
+  lm_poly <- lm(accel ~ poly(times, Degres), data=mcycle)
+  
+  pred_poly <- predict(lm_poly,
+                        newdata = data.frame(times = time_grid))
+  plot(mcycle$times, mcycle$accel, pch = 20,
+       main = paste("Polynome de degres :", Degres))
+  lines(time_grid, pred_poly, col = 'red')
+}
+```
+Les modèles de faible complexité présentent un **biais élevé** (2, 5, 7), tandis que les modèles trop flexibles souffrent d’une **variance importante** (10). Le choix de la **fenêtre optimale** repose donc sur un compromis biais–variance.  
+
+Visuellement, la fenêtre choisie correspond à **8 ou 9**, ce qui permet un bon compromis entre précision et régularité du lissage.
+
+### Méthodes locales
+- **Lissage local / estimateur du quantile conditionnel non-paramétrique** : permet d’estimer le quantile d’une variable réponse \(Y\) conditionnellement à une variable explicative \(X=x\), en utilisant uniquement les observations proches de \(x\). Cette approche s’adapte aux variations locales et modélise des relations complexes sans imposer de forme fonctionnelle globale.
+
+## 3. Construction des bandes de confiance
+```{r}
+library(quantreg)
+rq(accel ~ poly(times,2), tau=0.05, data=mcycle)
+rq(accel ~ poly(times,2), tau=0.95, data=mcycle)
+```
+
+## 4. Méthodes pour choisir quel degré atteint les meilleurs performances
+
+Pour déterminer le degré optimal d’un polynôme, plusieurs méthodes peuvent être utilisées :  
+
+- **Validation croisée** : on évalue la performance du modèle sur des sous-ensembles de données non utilisés pour l’ajustement afin d’éviter le sur-apprentissage.  
+- **Critères AIC / BIC** : ces critères pénalisent la complexité du modèle et permettent de trouver un compromis entre qualité de l’ajustement et parcimonie.  
+- **Erreur de prédiction** : on choisit le degré qui minimise l’erreur sur un jeu de test indépendant ou via des techniques de re-échantillonnage.
+
+On va utiliser le critère AIC / BIC :
+```{r}
+DegresPolynome <- c(2, 5, 7, 8, 9, 10)
+
+AICVect <- numeric(length(DegresPolynome))
+BICVect <- numeric(length(DegresPolynome))
+
+for (i in 1:length(DegresPolynome)) {
+  Degres <- DegresPolynome[i]
+  lm_poly <- lm(accel ~ poly(times, Degres), data=mcycle)
+  AICVect[i] <- AIC(lm_poly)
+  BICVect[i] <- BIC(lm_poly)
+}
+
+DegresPolynome[which.min(AICVect)]
+DegresPolynome[which.min(BICVect)]
+```
+En utilisant les critères AIC et BIC pour sélectionner le degré optimal du polynôme, les deux critères donnent un degré égal à 10. Cela signifie que, selon ces critères, le modèle polynomial de degré 10 offre le meilleur compromis entre qualité d’ajustement et complexité du modèle, sans sous-ajuster ni sur-ajuster les données.
+
+## 5. Estimateur du quantile conditionnel non-paramétrique à l’aide d’un noyau gaussien
+```{r}
+library(np)
+
+np_mod <- npreg(accel ~ times, data=mcycle)
+plot(np_mod)
+points(mcycle$times, mcycle$accel, pch=19, col="grey")
+pred_np <- predict(np_mod, newdata = data.frame(times = time_grid))
+```
+
+L'estimateur à noyau capture efficacement la dynamique temporelle incluant une phase stable initiale, une forte perturbation avec minimum vers -115 au temps 25, suivie d'une récupération, démontrant la flexibilité de l'approche non-paramétrique.
+
+## 6. Choix de la fenetre (Cross Validation par la méthode LOO)
+```{r}
+LOOError <- numeric(length(DegresPolynome))
+
+for (j in seq_along(DegresPolynome)) {
+  Degres <- DegresPolynome[j]
+  err <- numeric(dim(mcycle)[1])
+  for (i in 1:dim(mcycle)[1]) {
+    fit <- lm(accel ~ poly(times, Degres),
+              data = mcycle[-i, ])
+    pred <- predict(fit,
+                    newdata = mcycle[i, ])
+    err[i] <- (mcycle$accel[i] - pred)^2
+  }
+  LOOError[j] <- mean(err)
+}
+
+DegresPolynome[which.min(LOOError)]
+```
+En utilisant le critère LOO (Leave-One-Out) pour évaluer les performances de prédiction, le degré optimal du polynôme est 8, tandis que les critères AIC et BIC donnent 10. Cela montre que, si l’on se base sur la capacité prédictive du modèle, un polynôme de degré 8 est légèrement préférable pour éviter le sur-apprentissage, même si le modèle plus complexe (degré 10) est jugé optimal selon les critères d’ajustement globaux.
+
+## 7. Visualisation des modeles
+```{r}
+time_grid <- seq(min(mcycle$times), max(mcycle$times), length.out = 300)
+
+# Polynome finale avec une fenetre de 8
+lmPolyFinal <- lm(accel ~ poly(times, 8), data=mcycle)
+PredPolyFinal <- predict(lmPolyFinal,
+                     newdata = data.frame(times = time_grid))
+
+par(mfrow = c(1, 1))
+plot(mcycle$times, mcycle$accel, pch=19, col="grey",
+     main="Comparaison des estimateurs",
+     xlab="Temps", ylab="Acceleration")
+lines(time_grid, PredPolyFinal, col="blue", lwd=2)     
+lines(time_grid, pred_np, col="green", lwd=2)      
+
+legend("bottomright", legend=c("Polynome (Globale)","Quantile conditionnel (Locale)"),
+       col=c("blue","green"), lwd=2)
+
+```
+
+Cette étude comparative démontre que l'estimateur de quantile conditionnel non-paramétrique à noyau offre une flexibilité supérieure pour capturer les variations locales des données, tandis que l'approche polynomiale globale impose une structure plus rigide qui peut induire des artefacts dans les régions extrêmes. Les deux méthodes identifient correctement la dynamique principale du phénomène observé, mais l'estimateur local s'avère plus adapté pour modéliser des relations complexes sans hypothèse préalable sur la forme fonctionnelle.

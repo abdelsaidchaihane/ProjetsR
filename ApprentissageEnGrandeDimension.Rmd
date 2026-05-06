@@ -1,0 +1,1539 @@
+---
+title: "Apprentissage en grande dimension - TP noté"
+author: "Aramide Adebara, Abdel Said Chaihane"
+date: "2025-11-11"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+---
+
+```{r}
+unlink(c("_cache", "_files"), recursive = TRUE)
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(tinytex)
+```
+
+
+
+## Introduction
+
+Dans ce projet, nous étudions la densité :
+
+
+$$ f(x) = p \cdot f_{1, 0.5}(x) + (1 - p) \cdot f_{3, 0.3}(x), \quad x \in \mathbb{R}, $$
+
+
+où $p = 0.3$ et $f_{\mu, \sigma}$ est la densité d'une loi normale $\mathcal{N}(\mu, \sigma^2)$. Nous allons démontrer les expressions de la variance intégrée et du biais intégré de l'estimateur par histogramme, puis les simuler en **R**.
+
+# Estimation par histogramme
+
+Nous devons estimer la fonction de densité \(f(x)\) sur un intervalle \([a, b]\) en utilisant un échantillon i.i.d. \(X_1, X_2, \dots, X_n\) suivant la loi \(f(x)\). Nous définissons un histogramme pour estimer cette densité.
+
+### Définition des intervalles \([I_k]\)
+
+L'intervalle \([a, b]\) est découpé en \(m\) sous-intervalles \([I_k]\), définis par :
+
+\[
+I_k = \left[ a + \frac{(k-1)(b-a)}{m}, a + \frac{k(b-a)}{m} \right], \quad k = 1, \dots, m
+\]
+
+
+$$ \text{taille } i_k = \frac{b - a}{m} $$
+Ainsi, l'union de ces sous-intervalles couvre tout l'intervalle \([a, b]\) :
+
+\[
+[a, b) = \bigcup_{k=1}^{m} I_k
+\]
+
+### Estimation des probabilités \(\hat{p}_k\)
+
+On définit ensuite l'estimateur de la probabilité que \(X \in I_k\), \(\hat{p}_k\), par :
+
+\[
+\hat{p}_k = \frac{1}{n} \sum_{i=1}^{n} \mathbf{1}_{X_i \in I_k}
+\]
+
+Ce qui signifie que \(\hat{p}_k\) est la proportion des observations qui tombent dans le sous-intervalle \(I_k\).
+
+### Estimateur par histogramme \(\hat{f}_n(x)\)
+
+La densité \(f(x)\) est estimée par un histogramme, défini comme suit :
+
+\[
+\hat{f}_n(x) = \sum_{k=1}^{m} \hat{d}_k \mathbf{1}_{x \in I_k}
+\]
+
+avec \(\hat{d}_k = \frac{\hat{p}_k m}{b-a}\). En d'autres termes, on suppose que la densité \(f(x)\) est constante dans chaque sous-intervalle \(I_k\), et on l'estime par \(\hat{d}_k\).
+
+---
+
+### Étude de la variance intégrée de l'histogramme
+
+Nous voulons étudier la variance intégrée de l'estimateur par histogramme, c'est-à-dire montrer que :
+
+\[
+\int_a^b \mathbb{E}\left[\left(\hat{f}_n(x) - \mathbb{E}[\hat{f}_n(x)]\right)^2 \right] dx = \frac{m}{n(b-a)} \sum_{k=1}^{m} p_k(1 - p_k)
+\]
+
+où \(p_k = P[X \in I_k]\).
+
+### Espérance de l'estimateur
+
+Commençons par calculer l'espérance de l'estimateur \(\hat{f}_n(x)\). Comme \(\hat{f}_n(x) = \sum_{k=1}^{m} \hat{d}_k \mathbf{1}_{x \in I_k}\), et sachant que \(\hat{d}_k = \frac{\hat{p}_k m}{b-a}\), on a :
+
+## Calcul de l'espérance de l'estimateur
+
+L'estimateur de la fonction \( f \) au point \( x \) est donné par une somme des contributions \(\hat{d}_k\) associées à chaque intervalle \(I_k\). Son espérance est donc :
+
+\[
+\mathbb{E}[\hat{f}_n(x)] = \mathbb{E}\left[\sum_{k=1}^{m} \hat{d}_k \mathbf{1}_{x \in I_k}\right]
+\]
+
+Puisque l'échantillon est  i.i.d (indépendant et identiquement distribué), on peut appliquer la linéarité de l'espérance pour chaque intervalle \(I_k\), ce qui donne :
+
+\[
+\mathbb{E}[\hat{f}_n(x)] = \sum_{k=1}^{m} \mathbb{E}\left[\hat{d}_k\right] \mathbf{1}_{x \in I_k}
+\]
+
+
+Or, \(\mathbb{E}[\hat{d}_k] = \frac{\mathbb{E}[\hat{p}_k] m}{b-a} = \frac{p_k m}{b-a}\). Donc, l'espérance de \(\hat{f}_n(x)\) est donnée par :
+
+\[
+\mathbb{E}[\hat{f}_n(x)] = \sum_{k=1}^{m} \frac{p_k m}{b-a} \mathbf{1}_{x \in I_k}
+\]
+
+Cela signifie que \(\mathbb{E}[\hat{f}_n(x)]\) est une fonction constante égale à \(\frac{p_k m}{b-a}\) sur chaque sous-intervalle \(I_k\).
+
+### Variance de l'estimateur
+
+Nous devons maintenant calculer la variance de \(\hat{f}_n(x)\). La variance est donnée par :
+
+\[
+\mathbb{V}[\hat{f}_n(x)] = \mathbb{E}\left[\left(\hat{f}_n(x) - \mathbb{E}[\hat{f}_n(x)]\right)^2\right]
+\]
+
+Comme \(\hat{f}_n(x) = \sum_{k=1}^{m} \hat{d}_k \mathbf{1}_{x \in I_k}\), la variance peut être calculée sur chaque sous-intervalle \(I_k\). Sur \(I_k\), on a :
+
+\[
+\mathbb{V}[\hat{f}_n(x)] = \mathbb{V}\left(\frac{\hat{p}_k m}{b-a}\right)
+\]
+
+Or, la variance de \(\hat{p}_k\) est donnée par :
+
+\[
+\mathbb{V}[\hat{p}_k] = \frac{p_k(1 - p_k)}{n}
+\]
+
+Ainsi, la variance de \(\hat{f}_n(x)\) sur \(I_k\) est :
+
+\[
+\mathbb{V}[\hat{f}_n(x)] = \frac{m^2}{(b-a)^2} \frac{p_k(1 - p_k)}{n}
+\]
+
+### Intégration de la variance
+
+Nous intégrons maintenant la variance sur l'intervalle \([a, b]\) :
+
+
+\[
+\int_a^b V[\hat{f}_n(x)] \, dx = \int_a^b \frac{m^2 p_k (1 - p_k)}{(b - a)^2 n} \, dx
+\]
+
+Sur chaque sous-intervalle \(I_k\), la variance est constante et vaut \(\frac{m^2}{(b-a)^2} \frac{p_k(1 - p_k)}{n}\). La longueur de chaque sous-intervalle est \(\frac{b-a}{m}\). Ainsi, l'intégrale sur chaque sous-intervalle \(I_k\) est :
+
+\[
+\int_{I_k} \mathbb{V}[\hat{f}_n(x)] dx = \frac{m^2}{(b-a)^2} \frac{p_k(1 - p_k)}{n} \cdot \frac{b-a}{m}
+\]
+
+Ce qui donne :
+
+\[
+\int_{I_k} \mathbb{V}[\hat{f}_n(x)] dx = \frac{m}{n(b-a)} p_k(1 - p_k)
+\]
+
+
+### Conclusion
+
+Nous avons montré que la variance intégrée de l'histogramme est donnée par :
+
+\[
+\int_a^b \mathbb{E}\left[\left(\hat{f}_n(x) - \mathbb{E}[\hat{f}_n(x)]\right)^2 \right] dx = \frac{m}{n(b-a)} \sum_{k=1}^{m} p_k(1 - p_k)
+\]
+
+
+## Étude du biais intégré de l'estimateur
+
+Nous souhaitons maintenant étudier le biais intégré de l'estimateur par histogramme, et montrer que :
+
+\[
+\int_a^b \mathbb{E}\left[\hat{f}_n(x)\right] - f(x) \, dx = - \frac{m}{b-a} \sum_{k=1}^{m} p_k^2 + \int_a^b f^2(x) \, dx
+\]
+
+où \(p_k = P[X \in I_k]\).
+
+---
+
+### Étape 1 : Espérance de l'estimateur \(\hat{f}_n(x)\)
+
+Nous avons déjà calculé l'espérance de l'estimateur \(\hat{f}_n(x)\) dans la première partie, et elle est donnée par :
+
+\[
+\mathbb{E}[\hat{f}_n(x)] = \sum_{k=1}^{m} \frac{p_k m}{b-a} \mathbf{1}_{x \in I_k}
+\]
+
+Cela signifie que \(\mathbb{E}[\hat{f}_n(x)]\) est constante et égale à \(\frac{p_k m}{b-a}\) sur chaque sous-intervalle \(I_k\).
+
+---
+
+### Étape 2 : Expression du biais
+
+Le biais de l'estimateur \(\hat{f}_n(x)\) est donné par :
+
+\[
+\mathbb{E}[\hat{f}_n(x)] - f(x)
+\]
+
+Sur chaque sous-intervalle \(I_k\), cela devient :
+
+\[
+\mathbb{E}[\hat{f}_n(x)] - f(x) = \frac{p_k m}{b-a} - f(x), \quad \text{pour } x \in I_k
+\]
+
+Nous devons maintenant intégrer cette expression pour obtenir le biais intégré.
+
+---
+
+### Étape 3 : Biais intégré
+
+L'intégrale du biais au carré sur l'intervalle \([a, b]\) est donnée par :
+
+\[
+\int_a^b \left(\mathbb{E}[\hat{f}_n(x)] - f(x)\right)^2 \, dx = \sum_{k=1}^{m} \int_{I_k} \left( \frac{p_k m}{b-a} - f(x) \right)^2 \, dx
+\]
+
+Pour chaque sous-intervalle \(I_k\), cette intégrale devient :
+
+\[
+\int_{I_k} \left( \frac{p_k m}{b-a} - f(x) \right)^2 \, dx = \int_{I_k} \left( \left( \frac{p_k m}{b-a} \right)^2 - 2 \frac{p_k m}{b-a} f(x) + f(x)^2 \right) \, dx
+\]
+
+Cela se développe en trois termes :
+
+\[
+\sum_{k=1}^{m} \int_{I_k} \left( \frac{p_k^2 m^2}{(b-a)^2} \right) \, dx - 2 \sum_{k=1}^{m} \int_{I_k} \frac{p_k m}{b-a} f(x) \, dx + \sum_{k=1}^{m} \int_{I_k} f(x)^2 \, dx
+\]
+
+---
+
+### Étape 4 : Calcul de chaque terme
+
+#### Premier terme
+
+Le premier terme est une constante sur chaque sous-intervalle \(I_k\), et la longueur de \(I_k\) est \(\frac{b-a}{m}\). Donc :
+
+\[
+\sum_{k=1}^{m} \int_{I_k} \frac{p_k^2 m^2}{(b-a)^2} \, dx = \sum_{k=1}^{m} \frac{p_k^2 m^2}{(b-a)^2} \cdot \frac{b-a}{m} = \frac{m}{b-a} \sum_{k=1}^{m} p_k^2
+\]
+
+#### Deuxième terme
+
+Le deuxième terme est donné par :
+
+\[
+- 2 \sum_{k=1}^{m} \frac{p_k m}{b-a} \int_{I_k} f(x) \, dx
+\]
+
+Nous notons que \(\int_{I_k} f(x) \, dx = p_k\), par définition de \(p_k\). Donc ce terme devient :
+
+\[
+- 2 \sum_{k=1}^{m} \frac{p_k m}{b-a} p_k = - 2 \frac{m}{b-a} \sum_{k=1}^{m} p_k^2
+\]
+
+#### Troisième terme
+
+Le troisième terme est l'intégrale de \(f(x)^2\) sur l'intervalle \([a, b]\) :
+
+\[
+\sum_{k=1}^{m} \int_{I_k} f(x)^2 \, dx = \int_a^b f(x)^2 \, dx
+\]
+
+---
+
+### Étape 5 : Résultat final
+
+En combinant ces trois termes, on obtient le biais intégré :
+
+\[
+\int_a^b \left(\mathbb{E}[\hat{f}_n(x)] - f(x)\right)^2 \, dx = \frac{m}{b-a} \sum_{k=1}^{m} p_k^2 - 2 \frac{m}{b-a} \sum_{k=1}^{m} p_k^2 + \int_a^b f(x)^2 \, dx
+\]
+
+Ce qui se simplifie en :
+
+\[
+\int_a^b \left(\mathbb{E}[\hat{f}_n(x)] - f(x)\right)^2 \, dx = - \frac{m}{b-a} \sum_{k=1}^{m} p_k^2 + \int_a^b f(x)^2 \, dx
+\]
+
+---
+
+## Conclusion
+
+Nous avons montré que le biais intégré de l'estimateur par histogramme est donné par :
+
+\[
+\int_a^b \left(\mathbb{E}[\hat{f}_n(x)] - f(x)\right)^2 \, dx = - \frac{m}{b-a} \sum_{k=1}^{m} p_k^2 + \int_a^b f(x)^2 \, dx
+\]
+
+## Question 3:
+```{r}
+set.seed(123)
+# Paramètres
+p = 0.3
+n = 200
+
+# Simuler un échantillon de taille n = 200
+U = rbinom(n, size = 1, prob = p)
+X = ifelse(U == 1, rnorm(n, mean = 1, sd = 0.5), rnorm(n, mean = 3, sd = 0.3))
+```
+
+```{r}
+# Fonction pour tracer l'estimation par histogramme
+estimation_histogramme = function(X, m, a = 0, b = 4) {
+  hist(X, breaks = seq(a, b, length.out = m + 1), probability = TRUE, 
+       col = "lightblue", border = "white", xlab = "X", 
+       main = paste("Histogramme avec m =", m), ylim = c(0, 1.5))
+  
+  # Superposer la vraie densité
+  curve(0.3 * dnorm(x, mean = 1, sd = 0.5) + 0.7 * dnorm(x, mean = 3, sd = 0.3), 
+        from = a, to = b, add = TRUE, col = "red", lwd = 2)
+}
+
+# Tracer les histogrammes pour différentes valeurs de m
+par(mfrow = c(2, 2))  # Pour afficher les graphes 2x2
+for (m in c(5, 10, 30, 50)) {
+  estimation_histogramme(X, m)
+}
+```
+
+Les valeurs pour lesquelles l’histogramme a une forte variance et un petit biais sont: 30 et 50.
+La valeur pour laquelle l’histogramme a une faible variance et un biais élévé est 5.
+Les valeurs pour lesquelles l’histogramme a Un bon compromis biais-variance est 10.
+
+
+## Question 4:
+```{r}
+# Fonction pour calculer le biais, la variance et la MISE
+variance_biais_MISE = function(X, m, a = 0, b = 4) {
+  n = length(X)
+  a = min(a, min(X))
+  b = max(b, max(X))
+  
+  
+  h = (b - a) / m
+  breaks = seq(a, b, length.out = m + 1)
+  
+  counts = hist(X, breaks = breaks, plot = FALSE)$counts
+  pk = counts / n  # Proportions
+  
+  # Variance de l'histogramme
+  variance = sum(pk * (1 - pk)) / (n * h)
+  
+  # Calcul du biais intégré
+  f_true = function(x) { 0.3 * dnorm(x, 1, 0.5) + 0.7 * dnorm(x, 3, 0.3) }
+  biais = sum((pk - sapply(breaks[-1], f_true))^2) / (b - a)
+  
+  # MISE = Variance + Biais^2
+  MISE = variance + biais^2
+  
+  return(list(variance = variance, biais = biais, MISE = MISE))
+}
+```
+
+
+```{r}
+# Taille des échantillons à tester
+n_values = c(100, 200, 1000, 4000)
+resultats_list = list()
+
+# Boucle sur chaque taille d'échantillon
+for (n in n_values) {
+  # Simulation de l'échantillon
+  X = c(rnorm(n * 0.3, mean = 1, sd = 0.5), rnorm(n * 0.7, mean = 3, sd = 0.3))
+  
+  # Calcul des résultats pour différentes valeurs de m (de 3 à 60)
+  resultats = data.frame(m = 3:60, variance = NA, biais = NA, MISE = NA)
+  
+  for (m in 3:60) {
+    res = variance_biais_MISE(X, m)
+    resultats[m - 2, ] = c(m, res$variance, res$biais, res$MISE)
+  }
+  
+  # Trouver la valeur de m minimisant la MISE
+  m_oracle = resultats$m[which.min(resultats$MISE)]
+  cat("Pour n =", n, ", la valeur oracle de m minimisant la MISE est:", m_oracle, "\n")
+  
+  # Stocker les résultats pour le tracé
+  resultats_list[[as.character(n)]] = resultats
+}
+```
+
+
+```{r}
+# Visualisation des résultats pour chaque taille d'échantillon
+par(mfrow = c(2, 2))
+for (n in n_values) {
+  resultats = resultats_list[[as.character(n)]]
+  
+  plot(resultats$m, resultats$MISE, type = "l", col = "blue", lwd = 2, 
+       ylab = "Erreur", xlab = "m", main = paste("n =", n))
+  lines(resultats$m, resultats$variance, col = "green", lwd = 2, lty = 2)
+  lines(resultats$m, resultats$biais, col = "red", lwd = 2, lty = 3)
+  legend("topleft", legend = c("MISE", "Variance", "Biais^2"), 
+         col = c("blue", "green", "red"), lty = c(1, 2, 3), lwd = 2, cex=0.6)
+}
+```
+
+Pour de petits échantillons, un faible m réduit la variance en rendant l'histogramme plus stable, bien qu'un biais soit introduit.
+Avec des échantillons plus grands,augmenter m permet de diminuer le biais sans trop accroître la variance, offrant une estimation plus fine de la densité.
+Donc, pour une bonne estimation, il faut choisir un m qui minimise la MISE en trouvant un équilibre entre biais et variance.
+Cette analyse illustre bien le compromis biais-variance : à mesure que la taille de l'échantillon augmente,on peut se permettre d'augmenter le nombre de classes pour obtenir une approximation plus précise de la densité,car le biais diminue sans que la variance n'augmente trop.
+
+
+## Question 5:
+### Fonction pour choisir m selon une méthode simple similaire à Birgé et Rozenholc
+```{r}
+HISTSELECT2= function(x,A=min(x),B=max(x), col=NULL, border="black", freq=TRUE,  right=TRUE, xlab = deparse(substitute(x)), ylab=NA, main=paste("Birgé-Massart- Histogram", deparse(substitute(x)),Dstar), nmax=NA)
+{ if(is.na(ylab)){if(freq==TRUE){ylab="Frequency"}else{ylab="Density"}}
+  if(A>=B){cat("The limits of the chosen interval are not consistent")}
+  else
+  {
+    n<-length(x)
+    a<-min(x)
+    b<-max(x)
+    a2<-max(a,A)
+    b2<-min(b,B)
+    if(B<=a | A >=b){cat("There are no observations in the chosen interval")}
+    else{
+      y<-(x<a2|x>b2)
+      n2<-table(y)[1]
+      if(is.na(nmax)){nmax<-min(floor(n2/log(max(n2,exp(1)))), 250)}
+      #if(is.na(nmax)){nmax<-min(floor(0.3+n2^(0.575)),150)}
+      L = vector(mode="numeric", length=nmax)
+      for(D in 1:nmax)
+      {
+        bins<-a2+(b2-a2)*seq(0,1,1/D)
+        N<-hist(x[y==FALSE], breaks=bins, right=right, plot=FALSE)$count
+        #if(n2<150){pen<--D+1-(log(D))^(n*2.5/150)}else{pen<--D+1-(log(D))^(2.5)}
+        pen<--D+1-(log(D))^(2.5)
+        L[D]<-sum(N*log(pmax(N,1)))+n2*log(D)+pen
+      }
+      D1<-which.max(L)
+      D2<-order(L)[2]
+      D3<-order(L)[3]
+      if(n2<15){Dstar<-D1}
+      if(n2>14&n2<41){if(D1>1){Dstar<-D1}else{Dstar<-D2}}
+      if(n2>40){if(D1>2){Dstar<-D1}else{if(D2>2){Dstar<-D2}else{Dstar<-D3}}}
+      cat("Number of observations in the chosen interval:", n2, "\n")
+      cat("Partition size:", Dstar, "\n")
+      if(a2==a&b2==b)
+      {
+        hist(x,breaks=a2+(b2-a2)*seq(0,1,1/Dstar),freq=freq, right=right, xlim=c(a2,b2), col=col, border=border,xlab=xlab, ylab=ylab, main=main)
+      }
+      if(a2>a&b2==b)
+      {
+        a3<-a2-ceiling((a2-a)/((b2-a2)/Dstar))*(b2-a2)/Dstar
+        hist(x,breaks=seq(a3,b2,(b2-a2)/Dstar),freq=freq, right=right, xlim=c(a2,b2),col=col, border=border, xlab=xlab, ylab=ylab, main=main)
+        points(a2,0,col="black",pch=20)
+      }
+      if(a2==a&b2<b)
+      {
+        b3<-b2+ceiling((b-b2)/((b2-a2)/Dstar))*(b2-a2)/Dstar
+        hist(x,breaks=seq(a2,b3,(b2-a2)/Dstar),freq=freq, right=right, xlim=c(a2,b2), col=col, border=border, xlab=xlab, ylab=ylab, main=main)
+        points(b2,0,col="black",pch=20)
+      } 
+      if(a2>a&b2<b)
+      {
+        a3<-a2-ceiling((a2-a)/((b2-a2)/Dstar))*(b2-a2)/Dstar
+        b3<-b2+ceiling((b-b2)/((b2-a2)/Dstar))*(b2-a2)/Dstar
+        hist(x,breaks=seq(a3,b3,(b2-a2)/Dstar),freq=freq, right=right, xlim=c(a2,b2), col=col, border=border, xlab=xlab, ylab=ylab, main=main)
+        points(a2,0,col="black",pch=20)
+        points(b2,0,col="black",pch=20)
+      } 
+    }
+  }
+  return(Dstar)
+}
+```
+
+
+### Fonction pour comparer les histogrammes avec les valeurs oracles et celles de Birgé et Rozenholc
+```{r}
+compare_histograms_oracle = function(x, m_oracle, col = "lightblue") {
+  # Appliquer la méthode de Birgé et Rozenholc
+  Dstar = HISTSELECT2(x)
+  
+  # Créer les deux graphiques côte à côte
+  par(mfrow = c(1, 2)) # Disposition en 2 colonnes
+  
+  # Histogramme avec la méthode Birgé et Rozenholc
+  hist(x, breaks = seq(min(x), max(x), length.out = Dstar + 1), freq = FALSE, 
+       col = col, border = "black", main = paste("Birgé-Rozenholc, D* =", Dstar), 
+       xlab = "x", ylab = "Density", ylim = c(0, 1))
+  curve(0.3 * dnorm(x, mean = 1, sd = 0.5) + 0.7 * dnorm(x, mean = 3, sd = 0.3), 
+        col = "red", add = TRUE)  # Vraie densité
+  
+  # Histogramme avec le nombre de classes m oracle
+  hist(x, breaks = seq(min(x), max(x), length.out = m_oracle + 1), freq = FALSE, 
+       col = col, border = "black", main = paste("Oracle m =", m_oracle), 
+       xlab = "x", ylab = "Density",ylim = c(0, 1))
+  curve(0.3 * dnorm(x, mean = 1, sd = 0.5) + 0.7 * dnorm(x, mean = 3, sd = 0.3), 
+        col = "red", add = TRUE)  # Vraie densité
+}
+```
+
+
+En comparant les valeurs de la méthode de Birgé et Rozenholc aux valeurs de m choisies à la question précédente; on remarque que les valeurs de la méthode de irgé et Rozenholc  sont élévées par rapport aux valeurs de m 
+
+### Exemple d'utilisation pour différents échantillons
+
+```{r}
+# Échantillon pour n = 100
+set.seed(123)
+x_100 = c(rnorm(30, mean = 1, sd = 0.5), rnorm(70, mean = 3, sd = 0.3))
+m_oracle_100 = 5  # Valeur oracle de m pour n = 100
+compare_histograms_oracle(x_100, m_oracle_100)
+```
+
+```{r}
+# Échantillon pour n = 200
+set.seed(124)
+x_200 = c(rnorm(60, mean = 1, sd = 0.5), rnorm(140, mean = 3, sd = 0.3))
+m_oracle_200 = 6  # Valeur oracle de m pour n = 200
+compare_histograms_oracle(x_200, m_oracle_200)
+```
+```{r}
+# Échantillon pour n = 1000
+set.seed(125)
+x_1000 = c(rnorm(300, mean = 1, sd = 0.5), rnorm(700, mean = 3, sd = 0.3))
+m_oracle_1000 = 6  # Valeur oracle de m pour n = 1000
+compare_histograms_oracle(x_1000, m_oracle_1000)
+```
+
+```{r}
+# Échantillon pour n = 4000
+set.seed(126)
+x_4000 = c(rnorm(1200, mean = 1, sd = 0.5), rnorm(2800, mean = 3, sd = 0.3))
+m_oracle_4000 = 6  # Valeur oracle de m pour n = 4000
+compare_histograms_oracle(x_4000, m_oracle_4000)
+```
+
+Pour n=4000 et m_oracle=6
+Niveau de détail : La méthode de Birgé-Rozenholc, avec D=42 classes, donne un histogramme très détaillé, capturant les petites variations de la densité empirique. En revanche, la méthode Oracle avec m=6 classes produit un histogramme plus lissé et moins détaillé.
+Précision vs. généralisation : L'histogramme de Birgé-Rozenholc suit de près la vraie densité (courbe rouge), ce qui peut être utile pour une estimation fine, mais pourrait aussi introduire du bruit (sur-ajustement). En comparaison, la méthode Oracle donne une vue simplifiée qui représente les grandes tendances de la densité sans capturer chaque fluctuation.
+Utilisation pratique : Pour un échantillon de grande taille comme n=4000, la méthode de Birgé-Rozenholc tend à fournir une estimation plus précise, tandis que la méthode Oracle est utile pour une interprétation plus générale. Le choix de l'approche dépend donc de l'objectif : précision maximale ou vision synthétique.
+
+
+# ESTIMATION PAR NOYAU:
+## Question 1:
+```{r}
+# Simulation d'un échantillon de taille n = 200
+set.seed(123)
+n = 200
+p = 0.3  
+mu1 = 1; sigma1 = 0.5 
+mu2 = 3; sigma2 = 0.3 
+```
+
+```{r}
+# Tirer une variable de Bernoulli pour choisir entre les deux distributions
+U = rbinom(n, 1, p)
+X = ifelse(U == 1, rnorm(n, mu1, sigma1), rnorm(n, mu2, sigma2))
+```
+
+```{r}
+# Visualiser l'échantillon simulé avec un histogramme
+hist(X, breaks=30, probability=TRUE, col="lightblue", main="Histogramme des données simulées")
+
+# Tracer la vraie densité sur l'histogramme
+x_vals = seq(-1, 5, length.out=1000)
+true_density = 0.3 * dnorm(x_vals, mu1, sigma1) + 0.7 * dnorm(x_vals, mu2, sigma2)
+lines(x_vals, true_density, col="red", lwd=2)
+```
+
+
+```{r}
+# Valeurs de h
+h_values = c(0.01, 0.05, 0.2, 0.5, 1.0)
+```
+
+```{r}
+# Créer un graphique initial avec la vraie densité
+plot(x_vals, true_density, type="l", col="yellow", lwd=2, 
+     main="Estimation par noyau avec différentes valeurs de h",
+     ylim=c(0, 1.5), xlab="x", ylab="Densité")
+legend("topleft", legend=c("True Density", paste("h =", h_values)), col=c("yellow", 1:length(h_values)), lwd=2, cex = 0.7)
+
+# Boucler sur les différentes valeurs de h et tracer les estimations par noyau
+for (i in 1:length(h_values)) {
+  dens = density(X, bw=h_values[i], kernel="gaussian")
+  lines(dens$x, dens$y, col=i, lwd=2)
+}
+
+# La vraie densité est déjà tracée avec la couleur jaune
+lines(x_vals, true_density, col="yellow", lwd=2)
+
+```
+
+Les valeurs pour lesquelles l'estimateur à noyau a une forte variance et un faible biais sont: 0.01 et 0.05 (leurs courbes très fluctuantes).
+
+Les valeurs pour lesquelles l'estimateur à noyau a un fort biais et un faible variance sont: 0.5 et 1.
+
+La valeur pour laquelle le compromis biais-variance nous semble satisfaisant est 0.2.
+
+## Question 2: Variance de l'estimateur à noyau
+Nous allons montrer que la variance de l'estimateur à noyau \( \hat{f}_h(x) \) satisfait la borne suivante :
+
+\[
+\text{Var}(\hat{f}_h(x)) \leq \frac{\|f\|_\infty \int K^2(u) \, du}{nh}.
+\]
+
+### - Expression de la variance:
+\[
+\text{Var}(\hat{f}_h(x)) = \text{Var}\left( \frac{1}{nh} \sum_{i=1}^{n} K\left(\frac{x - X_i}{h}\right) \right).
+\]
+
+### - Propriété des sommes indépendantes
+
+Puisque les \( X_i \) sont des échantillons i.i.d., chaque terme \( K\left(\frac{x - X_i}{h}\right) \) est indépendant, ce qui nous permet d'écrire :
+
+\[
+\text{Var}(\hat{f}_h(x)) = \frac{1}{(nh)^2} \sum_{i=1}^{n} \text{Var}\left(K\left(\frac{x - X_i}{h}\right)\right) = \frac{1}{nh^2} \text{Var}\left(K\left(\frac{x - X_1}{h}\right)\right)
+\]
+
+### - Calcul de la variance:
+
+Nous devons maintenant calculer \( \text{Var}\left(K\left(\frac{x - X_1}{h}\right)\right) \). Rappelons que :
+
+\[
+\text{Var}(Z) = E[Z^2] - (E[Z])^2.
+\]
+
+Appliquons cela à notre cas :
+
+\[
+\text{Var}\left(K\left(\frac{x - X_1}{h}\right)\right) = E\left[K^2\left(\frac{x - X_1}{h}\right)\right] - \left(E\left[K\left(\frac{x - X_1}{h}\right)\right]\right)^2.
+\]
+
+Le deuxième terme est toujours positif, donc on a l'inégalité :
+
+\[
+\mathrm{Var}\left(K\left(\frac{x - X_1}{h}\right)\right) \leq \mathbb{E}\left[\left(K\left(\frac{x - X_1}{h}\right)\right)^2\right].
+\]
+
+### - Calcul de \( E\left[K^2\left(\frac{x - X_1}{h}\right)\right] \)
+
+Utilisons le changement de variable \( u = \frac{x - y}{h} \), ce qui donne :
+
+\[
+E\left[K^2\left(\frac{x - X_1}{h}\right)\right] = \int_{-\infty}^{\infty} K^2\left(\frac{x - y}{h}\right) f(y) \, dy.
+\]
+
+Effectuons un changement de variable :
+\[
+u = \frac{x - y}{h} \quad \Rightarrow \quad y = x - hu.
+\]
+
+\[
+\frac{dy}{du} = -h \quad \Rightarrow \quad dy = -h \, du.
+\]
+
+Lorsque \( y \to -\infty \), alors \( u \to \infty \)   
+Lorsque \( y \to \infty \), alors \( u \to -\infty \)
+
+\[
+\int_{-\infty}^{\infty} f(y) \, dy = \int_{\infty}^{-\infty} f(x - hu) (-h) \, du = h \int_{-\infty}^{\infty} f(x - hu) \, du.
+\]
+
+\[
+E\left[K^2\left(\frac{x - X_1}{h}\right)\right] = h \int_{-\infty}^{\infty} K^2(u) f(x - hu) \, du.
+\]
+
+### - Majoration
+
+Étant donné que \( f \) est bornée, nous avons \( f(y) \leq \|f\|_\infty \). Cela nous permet de majorer l'espérance :
+
+\[
+E\left[K^2\left(\frac{x - X_1}{h}\right)\right] \leq h \|f\|_\infty \int_{-\infty}^{\infty} K^2(u) \, du.
+\]
+
+### - Conclusion
+En combinant les résultats, on obtient :
+
+\[
+V(\hat{f}_h(x)) \leq \frac{1}{n h^2} h\|f\|_\infty \int K^2(u) du.
+\]
+
+Finalement, la borne peut être réécrite en simplifiant par \( h^2 \) :
+
+\[
+V(\hat{f}_h(x)) \leq \frac{\|f\|_\infty}{n h} \int K^2(u) du.
+\]
+
+
+## Question 3: Majoration du biais de l'estimateur à noyau
+
+Nous voulons montrer que le biais de l'estimateur à noyau satisfait la majoration suivante :
+
+\[
+\left| E[\hat{f}_h(x)] - f(x) \right| \leq \frac{h^2}{2} \|f''\|_\infty.
+\]
+
+### - Expression de l'estimateur à noyau
+
+L'estimateur à noyau est défini par :
+
+\[
+\hat{f}_h(x) = \frac{1}{nh} \sum_{i=1}^{n} K\left(\frac{x - X_i}{h}\right).
+\]
+
+L'espérance de cet estimateur est donnée par :
+
+\[
+E[\hat{f}_h(x)] = \frac{1}{nh} \sum_{i=1}^{n} E\left[K\left(\frac{x - X_i}{h}\right)\right].
+\]
+
+### - Changement de variable
+
+Pour calculer \(E[K((x - X_i)/h)]\), nous faisons un changement de variable. Soit \(u = \frac{x - X_i}{h}\), alors \(X_i = x - hu\) et \(du = -\frac{1}{h} dX_i\).
+
+Ainsi, nous avons :
+
+\[
+E\left[K\left(\frac{x - X_i}{h}\right)\right] = \int_{-\infty}^{\infty} K(u) f(x - hu) \, du.
+\]
+
+### - Développement de \(f(x - hu)\)
+
+Puisque \(f\) est deux fois dérivable, nous pouvons effectuer un développement de Taylor autour de \(x\) :
+
+\[
+f(x - hu) = f(x) - hu f'(x) + \frac{(hu)^2}{2} f''(x) + R(u),
+\]
+
+où \(R(u)\) est le reste du développement, qui est négligeable par rapport à \(h^2\).
+
+### - Calcul de l'espérance
+
+En intégrant le développement :
+
+\[
+E\left[K\left(\frac{x - X_i}{h}\right)\right] = \int_{-\infty}^{\infty} K(u) \left( f(x) - hu f'(x) + \frac{(hu)^2}{2} f''(x) + R(u) \right) du.
+\]
+
+En utilisant la propriété de la fonction de noyau \(K\) (où \(\int K(u) \, du = 1\) et \(\int u K(u) \, du = 0\) pour un noyau symétrique), nous avons :
+
+- Le terme \( \int K(u) \, du = 1 \), car \( K(u) \) est une fonction noyau.
+- Le terme \( \int u K(u) \, du = 0 \), car \( K(u) \) est symétrique autour de zéro.
+- Le terme \( \int u^2 K(u) \, du = 1 \), par hypothèse pour le noyau gaussien.
+
+Ainsi :
+
+\[
+\mathbb{E}[\hat{f}_h(x)] = f(x) + \frac{h^2}{2} f''(x) \int u^2 K(u) \, du + \mathcal{O}(h^3).
+\]
+
+Puisque \( \int u^2 K(u) \, du = 1 \), cela donne :
+
+\[
+\mathbb{E}[\hat{f}_h(x)] = f(x) + \frac{h^2}{2} f''(x) + \mathcal{O}(h^3).
+\]
+
+Le biais est donc :
+
+\[
+\text{Biais} = \mathbb{E}[\hat{f}_h(x)] - f(x) = \frac{h^2}{2} f''(x) + \mathcal{O}(h^3).
+\]
+
+### - Majoration du biais
+
+En utilisant que \( f'' \) est bornée par \( \|f''\|_\infty \), on majore le biais :
+
+\[
+\left| \mathbb{E}[\hat{f}_h(x)] - f(x) \right| \leq \frac{h^2}{2} \|f''\|_\infty.
+\]
+
+### - Résultat final
+
+La majoration souhaitée est donc démontrée :
+
+\[
+\left| \mathbb{E}[\hat{f}_h(x)] - f(x) \right| \leq \frac{h^2}{2} \|f''\|_\infty.
+\]
+
+## Question 4:
+L'objectif de \( \tilde{R}(h,f) \) est de minimiser l'erreur quadratique moyenne(MISE), qui est donnée par :
+
+$$
+\text{MISE}(h) = \mathbb{E}\left[\int \left(\hat{f}_h(x) - f(x)\right)^2 dx \right].
+$$
+
+Développons cette expression du MISE :
+
+$$
+\text{MISE}(h) = \mathbb{E}\left[\int \left( \hat{f}_h^2(x) - 2\hat{f}_h(x) f(x) + f^2(x) \right) dx \right].
+$$
+
+Cela se décompose en trois termes :
+
+$$
+\text{MISE}(h) = \mathbb{E}\left[\int \hat{f}_h^2(x) dx \right] - 2 \mathbb{E}\left[\int \hat{f}_h(x) f(x) dx \right] + \int f^2(x) dx.
+$$
+
+### Expression de \( \tilde{R}(h,f) \)
+
+Comparons cette expression avec \( \tilde{R}(h,f) \), qui est définie comme :
+
+$$
+\tilde{R}(h,f) = \mathbb{E}\left[\int \hat{f}_h^2(x) dx \right] - 2 \mathbb{E}\left[\int \hat{f}_h(x) f(x) dx \right].
+$$
+
+On constate que \( \tilde{R}(h,f) \) est très proche de \( \text{MISE}(h) \), mais il manque le terme \( \int f^2(x) dx \), qui correspond à la vraie densité \( f(x) \). Ce terme est constant et indépendant de l'estimateur \( \hat{f}_h \), donc il ne dépend pas de \( h \).
+
+### Biais de \( \tilde{R}(h,f) \)
+
+Le biais de \( \tilde{R}(h,f) \) par rapport à \( \text{MISE}(h) \) est donc simplement la différence entre ces deux expressions, c'est-à-dire :
+
+$$
+\text{Biais} = \text{MISE}(h) - \tilde{R}(h,f) = \int f^2(x) dx.
+$$
+
+Le biais de \( \tilde{R}(h,f) \) est :
+
+$$
+\int f^2(x) dx.
+$$
+
+En développant l'expression sous l'intégrale dans le MISE, tenant compte du fait que l'espérance est un opérateur linéaire et que 
+$$
+\mathbb{E}\left[\int f(x)^2 dx \right] = \int f(x)^2 dx 
+$$ 
+qui ne dépend pas de \( h \).
+On note que \( \int \hat{f}_h^2(x) dx \) est un estimateur sans biais de \( \mathbb{E}\left[\int \hat{f}_h^2(x) dx \right] \).
+Nous pouvons écrire :
+
+$$
+\arg\min_{h>0} MISE(h) = \arg\min_{h>0} \mathbb{E}\left[\int \hat{f}_h^2(x) dx - 2\int \hat{f}_h(x) f(x) dx \right]
+$$
+
+Aussi, on sait que 
+$$
+\mathbb{E}\left[\int \hat{f}_h(x) f(x) dx \right] = \mathbb{E}\left[\hat{f}_h(X)\right]
+$$
+où \( X \) désigne une variable aléatoire de densité \( f \).
+
+### Estimateur sans biais
+
+Introduisons \( \hat{f}_{h,-i} \), l'estimation obtenue en excluant l'observation \( x_i \) de \( D_N \) avec \( D_N \) un échantillon de \( R^2\) :
+
+$$
+\hat{f}_{h,-i}(x) = \frac{1}{N-1} \sum_{j \neq i} \varphi_h(x, x_j)
+$$
+
+\( \frac{1}{N} \sum_{i=1}^{N} \hat{f}_{h,-i}(x_i) \) est un estimateur sans biais de \( \mathbb{E}\left[\hat{f}_h(X)\right] \) et donc de \(\mathbb{E}\left[\int \hat{f}_h(x) f(x) dx \right]\).
+
+### Optimisation de la constante de lissage
+
+La valeur optimale de la constante de lissage sera alors :
+
+$$
+h^* = \arg\min_{h > 0} \left[\int \hat{f}_h^2(x) dx - \frac{2}{N} \sum_{i=1}^{N} \hat{f}_{h,-i}(x_i) \right]
+$$
+
+Cette approche permet de minimiser le MISE et donc d'obtenir une estimation optimale de la densité \( \hat{f}_h \).
+
+### Conclusion
+
+En conclusion, pour obtenir une estimation optimale de la densité \( \hat{f}_h \), il est nécessaire de choisir une largeur de fenêtre \( h \) qui minimise l'écart quadratique moyen intégré.
+Ici, l'expression 
+
+$$
+CV(h) = \int \hat{f}_h^2(x) dx - \frac{2}{N} \sum_{i=1}^{N} \hat{f}_{h,-i}(x_i)
+$$
+est un estimation sans biais du MISE. 
+
+### Graphiques
+### - Avec l'estimateur sans biais CV:
+```{r include=FALSE}
+library(ggplot2)
+library(gridExtra)
+```
+
+```{r}
+# Définir la densité réelle f(x)
+f = function(x) {
+  p = 0.3
+  return(p * dnorm(x, mean = 1, sd = 0.5) + (1 - p) * dnorm(x, mean = 3, sd = 0.3))
+}
+```
+
+```{r}
+# Générer un échantillon en suivant la loi définie
+echantillon = function(n) {
+  u = rbinom(n, 1, 0.3)  
+  x = numeric(n)
+  
+  for (i in 1:n) {
+    if (u[i] == 1) {
+      x[i] = rnorm(1, mean = 1, sd = 0.5)
+    } else {
+      x[i] = rnorm(1, mean = 3, sd = 0.3)
+    }
+  }
+  return(x)
+}
+```
+
+```{r}
+# Estimateur à noyau
+estimateur = function(x, data, h) {
+  n = length(data)
+  K = dnorm((x - data) / h)
+  return(sum(K) / (n * h))
+}
+```
+
+```{r}
+# Estimateur à noyau leave-one-out
+estimateur_loo = function(x, data, h, i) {
+  data_without_i = data[-i]
+  n = length(data_without_i)
+  K = dnorm((x - data_without_i) / h)  # Noyau gaussien
+  return(sum(K) / (n * h))
+}
+```
+
+```{r}
+# Validation croisée LOO pour trouver la meilleure largeur de bande h
+CV = function(h, data) {
+  n = length(data)
+  
+  # Premier terme : moyenne de f_h^2(x)
+  esti_squared = sapply(data, function(x) estimateur(x, data, h))
+  term1 = mean(esti_squared^2)
+  
+  # Second terme : validation croisée LOO
+  loo_estimations = numeric(n)
+  for (i in 1:n) {
+    loo_estimations[i] = estimateur_loo(data[i], data, h, i)
+  }
+  term2 = mean(loo_estimations)
+  
+  # Calcul du CV
+  return(term1 - 2 * term2)
+}
+
+```
+
+```{r}
+# Recherche de la meilleure fenêtre h
+optimize_h0 = function(data) {
+  h_values = seq(0.1, 5, by = 0.1)
+  CV_values = sapply(h_values, CV, data = data)
+  return(h_values[which.min(CV_values)])
+}
+```
+
+```{r}
+# Simulation et visualisation
+set.seed(123)
+sample_sizes = c(100, 200, 1000, 4000)
+plots = list()
+
+for (n in sample_sizes) {
+  data = echantillon(n) 
+  h_opt = optimize_h0(data)
+  
+  # Création des histogrammes pour les estimations de densité
+  x_vals = seq(0, 4, length.out = 1000)
+  esti = sapply(x_vals, estimateur, data = data, h = h_opt)
+  
+  # Création du DataFrame pour l'estimation (pour les histogrammes)
+  plot_data = data.frame(x = x_vals, estimate = esti)
+  
+  # Création du graphique avec histogrammes et courbe de la vraie densité
+  plot = ggplot() +
+    # Histogramme de l'échantillon
+    geom_histogram(data = data.frame(x = data), aes(x = x, y = ..density..), 
+                   binwidth = 0.1, fill = "lightblue", color = "black", alpha = 0.6) +
+    # Courbe de la vraie densité
+    stat_function(fun = f, aes(color = "Vraie densité"), size = 1) +  # Courbe vraie densité
+    labs(title = paste("Estimateur à noyau pour n =", n),
+         y = "Densité estimée", x = "x") +
+    scale_color_manual(values = c("Vraie densité" = "red", "Estimation" = "lightblue")) +  # Légende pour la vraie densité
+    theme_minimal()
+  
+  plots[[as.character(n)]] = plot
+  print(h_opt)
+}
+
+# Affichage des graphiques
+do.call(grid.arrange, c(plots, ncol = 2))
+```
+
+L’estimation à noyau semble plus appropriée dans ce cas, car elle capture mieux les détails fins de la distribution, notamment les deux pics visibles dans les données. Sa flexibilité permet de s’adapter à la structure locale des données, ce qui est essentiel pour des distributions complexes ou multimodales. En revanche, l’estimateur de Birgé et Rozenholc, bien que plus stable et robuste, lisse excessivement la densité et simplifie trop la structure, rendant difficile la détection des variations locales importantes. Ainsi, pour n=100, n=200, n=1000 et n=4000, l’estimation à noyau offre une meilleure représentation globale malgré une légère sensibilité aux oscillations dues au bruit.
+
+### - Avec l'estimateur \tilde{R}(h,f):
+
+```{r}
+# Estimateur R(h, f)
+R = function(h, data, f) {
+  # Calcul du premier terme : intégrale de f_h^2(x)
+  x_vals = seq(0, 4, length.out = 1000)
+  estimes = sapply(x_vals, estimateur, data = data, h = h)
+  
+  term1 = sum(estimes^2) * (x_vals[2] - x_vals[1]) 
+  
+  # Calcul du second terme : intégrale de f_h(x) * f(x)
+  f_vals = sapply(x_vals, f)
+  term2 = sum(estimes * f_vals) * (x_vals[2] - x_vals[1])  
+  
+  # R(h, f) = E[ int(f_h^2(x) dx) - 2 int(f_h(x) * f(x) dx) ]
+  return(term1 - 2 * term2)
+}
+```
+
+```{r}
+# Recherche de la meilleure fenêtre h en utilisant R(h, f)
+optimize_h = function(data, f) {
+  h_values = seq(0.1, 5, by = 0.1)
+  R_values = sapply(h_values, R, data = data, f = f)
+  return(h_values[which.min(R_values)])
+}
+```
+
+```{r}
+# Simulation et visualisation
+set.seed(123)
+sample_sizes = c(100, 200, 1000, 4000)
+plots = list()
+
+for (n in sample_sizes) {
+  data = echantillon(n) 
+  h_opt = optimize_h(data, f)
+  
+  # Créer les valeurs x pour le calcul de l'estimation
+  x_vals = seq(0, 4, length.out = 1000)
+  esti = sapply(x_vals, estimateur, data = data, h = h_opt)
+  
+  # Créer un DataFrame pour l'estimation (utilisé pour l'histogramme)
+  plot_data = data.frame(x = x_vals, estimate = esti)
+  
+  # Création du graphique avec histogramme
+  plot = ggplot(plot_data, aes(x = x)) +
+    geom_histogram(data = data.frame(x = data), aes(y = ..density..), 
+                   binwidth = 0.1, fill = "lightblue", color = "black", alpha = 0.6) +  
+    stat_function(fun = f, aes(color = "Vraie densité"), size = 1) +  # Courbe de la vraie densité
+    labs(title = paste("Estimateur à noyau pour n =", n),
+         y = "Densité estimée", x = "x") +
+    scale_color_manual(name = "Légende", 
+                       values = c("Vraie densité" = "red", "Dentité estimée" = "lightblue")) +
+    theme_minimal()
+  
+  plots[[as.character(n)]] = plot
+  print(h_opt)
+}
+
+# Affichage des graphiques
+do.call(grid.arrange, c(plots, ncol = 2))
+
+```
+En comparant les graphiques de l'estimateur \tilde{R}(h,f) avec ceux de Birgé-Rozenholc, on remarque que ceux de l'estimateur \tilde{R}(h,f) son plus précis.
+
+
+# ESTIMATION PAR PROJECTION:
+## Question 1: Les fonctions de base pour D=5
+```{r}
+# Définir l'intervalle [a, b]
+set.seed(123) # Assurer la reproductibilité
+n = 1000
+p = 0.3
+mu1 = 1
+sigma1 = 0.5
+mu2 = 3
+sigma2 = 0.3
+D = 5
+U = rbinom(n, 1, p)
+X = ifelse(U == 1, rnorm(n, mu1, sigma1), rnorm(n, mu2, sigma2))
+a = min(X)
+b = max(X)
+```
+
+```{r}
+# Définition des fonctions de la base trigonométrique
+phi_j = function(x, D, a, b) {
+  x_scaled = (x - a) / (b - a)
+  
+  # Base trigonométrique
+  phi = matrix(0, nrow = length(x), ncol = D)
+  phi[, 1] = 1/ sqrt(b - a) 
+  for (j in 1:floor(D / 2)) {
+    phi[, 2*j] = sqrt(2) * cos(2 * pi * j * x_scaled)/sqrt(b-a)
+    phi[, 2*j + 1] = sqrt(2) * sin(2 * pi * j * x_scaled)/sqrt(b-a)
+  }
+  return(phi)
+}
+
+```
+
+```{r}
+# Valeurs de l'échantillon pour l'intervalle [a, b]
+x_values = seq(a, b, length.out = 1000)
+
+# Calcul des fonctions de base pour D=5
+phi_values = phi_j(x_values, D, a, b)
+
+# Tracer les fonctions de base ϕ2(x), ϕ3(x), ϕ4(x), ϕ5(x)
+plot(x_values, phi_values[, 2], type = 'l', col = 'red', ylim = range(phi_values), 
+     main = 'Fonctions de base trigonométriques (ϕ2, ϕ3, ϕ4, ϕ5)', ylab = 'ϕj(x)', xlab = 'x')
+lines(x_values, phi_values[, 3], col = 'blue')
+lines(x_values, phi_values[, 4], col = 'green')
+lines(x_values, phi_values[, 5], col = 'purple')
+legend('topright', legend = c('ϕ2(x)', 'ϕ3(x)', 'ϕ4(x)', 'ϕ5(x)'), 
+       col = c('red', 'blue', 'green', 'purple'), lty = 1, cex = 0.5)
+
+```
+
+# Question 2:
+```{r}
+# Fonction pour calculer les coefficients a_j pour la projection sur la base trigonométrique
+coeff_a_hat = function(X, D, a, b) {
+  phi_matrix = phi_j(X, D, a, b)
+  a_hat = colMeans(phi_matrix)
+  
+  return(a_hat)
+}
+```
+
+```{r}
+# Générer un échantillon de taille n = 1000 (loi de mélange de Gaussiennes)
+set.seed(123)
+X = ifelse(U == 1, rnorm(n, mean = 1, sd = 0.5), rnorm(n, mean = 3, sd = 0.3))
+
+# Calcul des coefficients a_j
+a_hat = coeff_a_hat(X, D, a, b)
+
+# Afficher les coefficients estimés
+print(a_hat)
+```
+
+```{r}
+# Fonction pour calculer l'estimateur fD(x) à partir des coefficients a_j
+fD_h = function(X, a_hat, D, a, b, x_values) {
+  phi_matrix = phi_j(x_values, D, a, b)
+  fD_hat = phi_matrix %*% a_hat 
+  return(fD_hat)
+}
+```
+
+```{r}
+# Définir les valeurs de D 
+D_values = seq(3, 51, by = 2) 
+
+x_values = seq(a, b, length.out = 1000)  
+
+# Créer un tableau pour stocker les résultats de fD(x) pour chaque D
+density_estimates = list()
+
+# Calculer les estimateurs pour différentes valeurs de D
+for (D in D_values) {
+  a_hat = coeff_a_hat(X, D, a, b)
+  fD_hat = fD_h(X, a_hat, D, a, b, x_values)
+  density_estimates[[as.character(D)]] = fD_hat
+}
+print(fD_hat[3:51])
+```
+
+```{r}
+# Tracer les estimateurs pour chaque D avec la vraie densité
+f = function(x) {
+  res = 0.3 * dnorm(x, mu1, sigma1) + 0.7 * dnorm(x, mu2, sigma2)
+  return(res)
+}
+```
+
+```{r}
+library(ggplot2)
+```
+
+```{r}
+plot_data = data.frame(x = rep(x_values, length(D_values)), 
+                        fD_hat = unlist(density_estimates), 
+                        C = factor(rep(D_values, each = length(x_values))))
+
+ggplot(plot_data, aes(x = x, y = fD_hat, color = C)) +
+  geom_line() +
+  labs(title = "Estimateur de la densité par projection",
+       x = "x", y = "Densité estimée") +
+  theme_minimal() +
+  scale_color_viridis_d() +
+  geom_line(data = data.frame(x = x_values, y = f(x_values)), 
+            aes(x = x, y = y), color = "black") + 
+  theme(legend.title = element_blank())
+```
+
+
+# Question 3:
+```{r}
+# Méthode des trapèzes pour l'intégration
+trapz = function(f, x) {
+  n = length(x)
+  h = diff(x)
+  return(sum(0.5 * (f[-n] + f[-1]) * h))
+}
+```
+
+```{r}
+phi_j2 = function(j, x, a, b) {
+  # Normalisation sur l'intervalle [a, b]
+  x_scaled = (x - a) / (b - a)
+  if (j == 1) {
+    return(1 / sqrt(b - a))  
+  } else if (j %% 2 == 0) {
+    # Cosinus
+    return(sqrt(2) * cos(2 * pi * (j / 2) * x_scaled)/sqrt(b-a))
+  } else {
+    # Sinus
+    return(sqrt(2) * sin(2 * pi * ((j - 1) / 2) * x_scaled)/sqrt(b-a))
+  }
+}
+```
+
+```{r}
+# Calcul des coefficients théoriques a_j pour j = 1,...,25
+calc_a_j = function(j, a, b, f) {
+  x_vals = seq(a, b, length.out = n)  
+  phi_vals = sapply(x_vals, function(x) phi_j2(j, x, a, b))
+  f_vals = sapply(x_vals, function(x) f(x))
+  
+  return(trapz(phi_vals * f_vals, x_vals))
+}
+```
+
+```{r}
+# Calcul des coefficients a_j pour j = 1, ..., 25 (correspondant à D = 51)
+aj_theorique = sapply(1:25, function(j) calc_a_j(j, a, b, f))
+print(aj_theorique)
+```
+
+```{r}
+# Calcul des coefficients estimés a_j
+coeff_a_hat = function(j, X, a, b) {
+  # Calcul de la moyenne empirique
+  phi_vals = sapply(X, function(x) phi_j2(j, x, a, b))
+  return(mean(phi_vals))
+}
+
+# Calcul des aj estimés pour j = 1,...,25
+aj_estime = sapply(1:25, function(j) coeff_a_hat(j, X, a, b))
+print(aj_estime)
+```
+
+```{r}
+# Comparaison entre aj théorique et estimé
+plot(1:25, aj_theorique, type = "b", col = "red", pch = 16, xlab = "j", ylab = "a_j", ylim = range(c(aj_theorique, aj_estime)))
+lines(1:25, aj_estime, type = "b", col = "blue", pch = 16)
+legend("topright", legend = c("a_j théorique", "a_j estimé"), col = c("red", "blue"), pch = 16)
+
+```
+On remarque que l’estimateur et la vraie valeur sont très proches.  \\
+
+Le biais au carré d'un estimateur est défini comme la différence au carré entre l'estimateur \( \hat{f}_D(x) \) et la vraie fonction \( f(x) \). 
+
+Formellement, cela s'écrit :
+
+\[
+\text{Biais}^2 = \int_a^b \left( f_D(x) - f(x) \right)^2 dx
+\]
+
+```{r}
+# Fonction pour calculer f_D(x)
+f_D = function(x, D, a, b, aj_theorique) {
+  sum(sapply(1:D, function(j) aj_theorique[j] * phi_j2(j, x, a, b)))
+}
+
+# Calcul du biais au carré pour différents D
+calculate_bias_squared = function(D, X, a, b, aj_theorique) {
+  # Discrétisation de l'intervalle [a, b]
+  x_vals = seq(a, b, length.out = n)
+  
+  # Calcul de f_D(x)
+  fD_vals = sapply(x_vals, function(x) f_D(x, D, a, b, aj_theorique))
+  f_vals = sapply(x_vals, function(x) f(x))
+  
+  # Biais au carré
+  return(trapz((fD_vals - f_vals)^2, x_vals))
+}
+
+# Calcul du biais au carré pour D = 3 à 51
+bias_squared = sapply(seq(3, 51, by = 2), function(D) calculate_bias_squared(D, X, a, b, aj_theorique))
+plot(seq(3, 51, by = 2), bias_squared, type = "b", pch = 16, col = "green", xlab = "D", ylab = "Biais^2")
+
+```
+On remarque que le carré du biais est faible quand D est grand et qu'il semble se stabiliser à partir de D=9.
+
+
+```{r}
+# Fonction pour calculer le biais au carré pour différentes valeurs de D
+biais_2 = function(true_density, fD_vals, x_values) {
+  fD_vals = sapply(x_values, function(x) f_D(x, D, a, b, aj_theorique))
+  f_vals = sapply(x_values, function(x) f(x))
+  bias_squared = trapz((fD_vals - f_vals)^2, x_values)
+  return(bias_squared)
+}
+
+# Définir les valeurs de D (nombre de coefficients à utiliser)
+D_values = seq(3, 51, by = 2)  # D allant de 3 à 51 avec un pas de 2
+x_values = seq(a, b, length.out = 1000)  # Valeurs de x pour évaluer fD(x)
+aj_theorique = sapply(1:51, function(j) calc_a_j(j, a, b, f))
+
+# Créer un tableau pour stocker les résultats de fD(x) pour chaque D
+density_estimates = list()
+bias_squared_values = numeric(length(D_values))
+
+# Calculer les estimateurs pour différentes valeurs de D
+for (i in 1:length(D_values)) {
+  D = D_values[i]
+  # Calcul du biais au carré pour cette valeur de D
+  bias_squared_values[i] = biais_2(f, fD_vals, x_values)
+}
+
+
+# Tracer le biais au carré pour chaque valeur de D
+bias_squared_plot = data.frame(D = D_values, BiasSquared = bias_squared_values)
+
+ggplot(bias_squared_plot, aes(x = D, y = BiasSquared)) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Biais au carré pour différentes valeurs de D",
+       x = "D", y = "Biais au carré") +
+  theme_minimal()
+
+```
+
+# Question 4:
+```{r}
+calculate_variance = function(a, b, f, D_values) {
+  variance_values = numeric() 
+  x_values = seq(a, b, length.out = 1000)  
+  
+  for (D in seq(3, max(D_values), by = 2)) {  
+    phi_matrix = sapply(1:D, function(j) sapply(x_values, function(x) phi_j2(j, x, a, b)))
+    
+    # Calcul de aj_theorique pour les j de 1 à D
+    aj_theorique = sapply(1:D, function(j) calc_a_j(j, a, b, f))
+    
+    # Calcul de la variance pour le D courant
+    variance = sum(sapply(1:D, function(j) {
+      # Intégrale de (phi_j(x) - aj_theorique[j])^2 * f(x)
+      integrand = (phi_matrix[, j] - aj_theorique[j])^2 * f(x_values)
+      trapz(integrand, x_values)  
+    }))
+        variance_values = c(variance_values, variance / n)
+  }
+  
+  return(variance_values)
+}
+
+variance_values = calculate_variance(a, b, f, D_values)
+
+variance_values
+plot(seq(3, max(D_values), by = 2), variance_values, type = "b", pch = 16, col = "blue", 
+     xlab = "D", ylab = "Variance", main = "Variance en fonction de D")
+```
+Lorsque n est constant, l'augmentation de D entraîne une augmentation linéaire de la variance. Toutefois, les valeurs de variance sont faibles (entre 0 et 0.01).
+
+### Graphique combiné
+```{r}
+combined_plot_data = data.frame(
+  D = rep(D_values, 2),
+  Value = c(bias_squared_values, variance_values),
+  Metric = rep(c("Biais au carré", "Variance"), each = length(D_values))
+)
+
+ggplot(combined_plot_data, aes(x = D, y = Value, color = Metric)) +
+  geom_line(size = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "Biais au carré et Variance en fonction de D",
+    x = "D",
+    y = "Valeur",
+    color = "Métrique"
+  ) +
+  theme_minimal() +
+  scale_color_manual(values = c("Biais au carré" = "green", "Variance" = "blue"))
+
+```
+Le graphe montre une évolution classique du compromis biais-variance en fonction de D. on a une baisse du biais au carré au fur et à mesure que D augmente. La variance  quant à elle, reste globalement faible et stable.Le modèle atteint un bon compromis autour du croisement des courbes, avec un faible biais et une variance maîtrisée.
+
+# Question 5:
+Dans cette analyse, nous considérons la décomposition biais-variance de l'erreur quadratique moyenne intégrée (MISE). Elle est donnée par :  
+
+\[
+\int_a^b \mathbb{E} \left[ (\hat{f}_D(x) - f(x))^2 \right] dx = \text{biais}^2 + \text{variance},
+\]
+
+où :  
+
+\[
+\text{biais}^2 = \int_a^b (f_D(x) - f(x))^2 dx,
+\]  
+et  
+
+\[
+\text{variance} = \frac{1}{n} \sum_{j=1}^D \text{Var}[\phi_j(X)] = \frac{1}{n} \sum_{j=1}^D \int_a^b (\phi_j(x) - a_j)^2 f(x) dx.
+\]
+
+Nous allons explorer cette décomposition en fonction de \(n\) et \(D\), et identifier \(D_\text{oracle}\), c'est-à-dire la valeur optimale de \(D\) minimisant la MISE.
+
+```{r}
+# Fonction qui calcule le MISE
+calc_mise = function(D_values, x_vals, a, b) {
+  f_vals = sapply(x_vals, f)  # Valeurs de la fonction cible
+  
+  # Initialisation des résultats
+  MISE_values = numeric(length(D_values))
+  
+  for (D in D_values) {
+    # Approximation de fD(x) avec D termes
+    fD_vals = sapply(x_vals, function(x) {
+      sum(aj_theorique[1:D] * sapply(1:D, function(j) phi_j2(j, x, a, b)))
+    })
+    
+    # Calcul du biais au carré
+    bias_squared = trapz((fD_vals - f_vals)^2, x_vals)
+    
+    # Calcul de la variance
+    variance = sum(sapply(1:D, function(j) {
+      integrand = (phi_matrix[, j] - aj_theorique[j])^2 * f_vals
+      trapz(integrand, x_vals)
+    }))
+    
+    # Calcul du MISE
+    MISE_values[D] = bias_squared + variance/length(x_vals)
+  }
+  
+  return(MISE_values) 
+}
+
+```
+
+```{r}
+# Paramètres et initialisation
+sample_sizes = c(100, 200, 1000, 4000)  # Tailles d'échantillons
+D_max = 51  # Nombre maximum de termes
+D_values = 1:D_max  # Plage des valeurs de D
+
+# Graphiques pour chaque taille d'échantillon
+par(mfrow = c(2, 2), mar = c(4, 4, 2, 1))  # Configuration des graphiques
+
+for (n in sample_sizes) {
+  aj_theorique = sapply(1:D_max, function(j) mean(sapply(X, function(x) phi_j2(j, x, a, b))))
+  
+  x_vals = seq(a, b, length.out = 1000)
+  phi_matrix = sapply(1:D_max, function(j) sapply(x_vals, function(x) phi_j2(j, x, a, b)))
+  
+  # Calcul du MISE
+  MISE_values = calc_mise(D_values, x_vals, a, b)
+  
+  # Trouver Doracle (D qui minimise le MISE)
+  Doracle = which.min(MISE_values)
+  
+  # Afficher Doracle
+  cat("Pour n =", n, ", Doracle =", Doracle, "\n")
+  
+  # Tracer le MISE
+  plot(D_values, MISE_values, type = "b", col = "blue", pch = 19,
+       main = paste("MISE en fonction de D pour n =", n),
+       xlab = "D", ylab = "MISE")
+  abline(v = Doracle, col = "red", lty = 2)
+  legend("topright", legend = c("MISE", paste("Doracle =", Doracle)), 
+         col = c("blue", "red"), lty = c(1, 2), pch = c(19, NA), cex = 0.8)
+}
+
+```
+
+
+# Question 6:
+```{r}
+# Fonction pour calculer le critère de choix du modèle pour chaque D
+calc_criteres <- function(D_values, x_vals, a, b, f, phi_j2, n, k = 2) {
+  
+  # Initialisation des valeurs du critère
+  criteres <- numeric(length(D_values))
+  
+  for (D in D_values) {
+    aj_theorique <- sapply(1:D, function(j) mean(sapply(x_vals, function(x) phi_j2(j, x, a, b))))
+    
+    somme_aj_carre <- sum(aj_theorique^2)
+    second_terme <- k * D / n
+    critere_D <- -somme_aj_carre + second_terme
+    criteres[D] <- critere_D
+  }
+  
+  return(criteres)
+}
+calc_criteres(D_values, x_vals, a, b, f, phi_j2, n, k = 2)
+```
+
+```{r}
+
+# Fonction pour choisir D qui minimise le critère
+choisir_D <- function(D_values, x_vals, a, b, f, phi_j2, n, k = 2) {
+  criteres <- calc_criteres(D_values, x_vals, a, b, f, phi_j2, n, k)
+  
+  # Trouver le D qui minimise le critère
+  D_choisi <- D_values[which.min(criteres)]
+  
+  return(D_choisi)
+}
+choisir_D(D_values, x_vals, a, b, f, phi_j2, n, k = 2) 
+```
+
+
+
+## Comparaison entre D^ et Doracle :
+
+    Pour des tailles d’échantillon faibles (n=100,n=200) :
+    Doraclereste fixé à 11, ce qui montre que, d’après la minimisation stricte du MISE, le modèle est suffisamment simple pour être bien représenté avec un seul terme.
+    En revanche, D^ prend des valeurs légèrement supérieures (D^=2 pour n=100 et D^=3 pour n=200), reflétant une pénalisation moins stricte qui permet d’ajouter un peu plus de flexibilité pour réduire le biais.
+
+    Pour des tailles d’échantillon plus grandes (n=1000,n=4000) :
+    Doracle reste constant à 11, confirmant que la structure du modèle est toujours bien capturée avec un seul terme, même lorsque la taille d’échantillon augmente.
+    En revanche, D^ augmente (D^=5 pour n=1000, D^=6 pour n=4000), ce qui montre que le critère basé sur κ=2 est moins restrictif avec des tailles d’échantillons plus importantes, favorisant une approximation plus précise de la densité.
+
+    Observation générale :
+    D^ dépasse systématiquement Doracle, ce qui montre que le critère basé sur −∑j=1Da^j2+κDn permet d’ajouter des degrés de liberté pour réduire le biais, surtout pour les grands échantillons.
+
+## Comparaison des estimateurs de f correspondants:
+
+On remarque sur le graphique que les estimateurs fD chapeau et fD oracle se rapprochent quand n est petit.
+
+
+### **Conclusion**: 
+Pour les différentes méthodes d'estimation, nous constatons que chacune présente des avantages et des inconvénients en fonction de la taille de l'échantillon. 
+
+1. **Estimation par histogramme** : Cette méthode est efficace pour des tailles d'échantillon plus petites, car elle est simple et permet une bonne approximation avec un nombre de classes modéré. Toutefois, elle peut être sensible au choix de la valeur de \( m \), et une valeur trop élevée augmente le biais sans apporter d'amélioration significative.
+
+2. **Estimation par noyau** : Avec une largeur de bande optimisée, cette méthode offre un bon compromis entre biais et variance, en particulier pour les tailles d'échantillon moyennes à grandes. Elle est plus flexible que l'histogramme et s'adapte mieux aux variations locales de la densité.
+
+3. **Estimation par projection** : Bien qu'elle nécessite un nombre plus important de termes pour minimiser le biais, cette méthode se stabilise bien pour les grandes tailles d'échantillon et est efficace pour obtenir une estimation plus proche de la vraie densité.
+
+En résumé, l'estimation par noyau semble fournir une approche équilibrée pour les tailles d'échantillon intermédiaires, tandis que l'estimation par projection est plus adaptée aux grandes tailles d'échantillon, offrant une meilleure approximation de la densité réelle.

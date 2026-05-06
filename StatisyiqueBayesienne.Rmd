@@ -1,0 +1,529 @@
+---
+title: "Projet Analyse de Données"
+author: "Abdel Said CHAIHANE et Ousmane SENE"
+date: "2025-12-13"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# INTRODUCTION
+
+L’analyse de données complexes nécessite des méthodes capables de modéliser à la fois l’hétérogénéité des observations et l’incertitude associée aux estimations. Dans ce projet, nous combinons les outils vus au cours du semestre a savoir la génération de variables aléatoires, modèles de mélanges, inférence bayésienne et algorithmes MCMC afin de proposer une analyse complète des temps d’attente entre deux éruptions du geyser Old Faithful. L’exploration des données met en évidence une distribution bimodale marquée, suggérant l’existence de plusieurs régimes d’activité, ce qui motive l’utilisation d’un modèle de mélange gaussien. L’objectif du projet est d’estimer les paramètres de ce modèle dans un cadre bayésien, de quantifier l’incertitude associée aux régimes identifiés et d’exploiter la posteriori pour la prédiction et le test d’hypothèses, notamment à l’aide d’un facteur de Bayes. L’ensemble de l’étude s’appuie sur les concepts théoriques et pratiques abordés dans les cours et travaux dirigés, et met l’accent sur l’interprétation statistique des résultats obtenus.
+
+# 1. IMPORTATION ET EXPLORATION DES DONNÉES
+
+## 1.1 CHARGEMENT
+
+```{r}
+
+data(faithful) 
+# On ne garde que la variable 'waiting'
+y <- faithful$waiting
+n <- length(y)
+
+# Petit résumé
+summary(y)
+hist(y, breaks = 30, main = "Histogramme de waiting", xlab = "Temps d'attente (min)")
+
+```
+
+INTERPRETATION:
+
+L'histogramme met clairement en évidence une distribution bimodale : on observe un premier groupe d’attentes relativement courtes, centrées autour de 50–55 minutes, et un second groupe d’attentes plus longues, concentrées autour de 75–85 minutes. Entre ces deux zones, la fréquence est nettement plus faible, ce qui suggère l’existence de deux régimes distincts de fonctionnement du geyser. Cette structure en deux pics est une information essentielle, car elle indique que la variable waiting ne suit pas une loi gaussienne simple, mais se prête naturellement à une modélisation par un mélange de lois gaussiennes, ce qui justifie pleinement l’approche du projet.
+
+# 2. ETUDE DES DISTRIBUTIONS A PRIORI
+
+## 2.1 LES DENSITÉ A PRIORI
+
+```{r}
+library(ggplot2)
+
+# Paramètres de prior
+K <- 2
+m0 <- 70     # comme la variable waiting est autour de 50–80, donc on peut prendre m = 70
+tau0 <- 20
+a0 <- 2
+b0 <- 50  # pour Inv-Gamma (shape=a0, scale=b0)
+alpha0 <- rep(1, K)  # Dirichlet(1,...,1)
+
+# Densité a priori de mu_k ~ N(m0, tau0^2)
+x_mu <- seq(0, 140, length.out = 500)
+dens_mu <- dnorm(x_mu, mean = m0, sd = tau0)
+
+plot(x_mu, dens_mu, type = "l", lwd = 2,
+     main = "Prior sur mu_k", xlab = expression(mu[k]), ylab = "densité")
+
+# Pour sigma^2_k ~ Inv-Gamma(a0, b0), on peut représenter sur sigma (écart-type)
+# On approxime avec une grille sur sigma^2 puis transformation
+sigma2_grid <- seq(1, 400, length.out = 500)
+# densité inv-gamma (à définir)
+dinvgamma <- function(x, shape, scale){
+  ifelse(x > 0, (scale^shape / gamma(shape)) * x^(-shape-1) * exp(-scale/x), 0)
+}
+dens_sigma2 <- dinvgamma(sigma2_grid, a0, b0)
+plot(sigma2_grid, dens_sigma2, type = "l", lwd = 2,
+     main = expression("Prior sur " * sigma[k]^2),
+     xlab = expression(sigma[k]^2), ylab = "densité")
+
+# Pour eta ~ Dirichlet(1,1) dans le cas K=2, c'est Uniforme sur [0,1] pour eta1
+eta1 <- seq(0, 1, length.out = 500)
+dens_eta1 <- dbeta(eta1, 1, 1)
+plot(eta1, dens_eta1, type = "l", lwd = 2,
+     main = "Prior sur eta1 (K=2)",
+     xlab = expression(eta[1]), ylab = "densité")
+
+```
+
+INTERPRETATIONS DES GRAPHES :
+
+Le premier graphique représente la distribution a priori des moyennes μk des composantes du mélange, supposée gaussienne. La densité est centrée autour d’une valeur intermédiaire (environ 70), avec une dispersion relativement large. Cela traduit un prior faiblement informatif : avant d’observer les données, on suppose que les moyennes plausibles des composantes se situent dans un intervalle large, couvrant à la fois des valeurs inférieures et supérieures à 60. Ce choix permet au modèle de s’adapter librement aux données et évite d’imposer artificiellement la position des régimes. En particulier, le prior n’exclut ni un régime d’attente court ni un régime d’attente long, ce qui est cohérent avec une approche bayésienne prudente
+
+Le deuxieme graphique montre la distribution a priori des variances σk\^2, définie sur les valeurs positives et fortement asymétrique à droite. La densité est concentrée sur des valeurs relativement faibles, tout en conservant une longue queue, ce qui autorise occasionnellement des variances plus grandes. Ce type de prior reflète l’idée que l’on s’attend plutôt à des composantes relativement homogènes, sans exclure pour autant une dispersion plus importante si les données l’exigent. Ainsi, le prior favorise des groupes bien définis tout en restant suffisamment flexible pour s’adapter à la structure réelle des observations
+
+Et l'autre correspond au prior sur le poids η1 de la première composante du mélange lorsque K=2. La densité est constante sur l’intervalle [0,1], ce qui correspond à une loi uniforme. Cela signifie qu’a priori, toutes les répartitions entre les deux composantes sont considérées comme également probables : aucune composante n’est favorisée avant l’observation des données. Ce choix traduit une absence totale d’information préalable sur la proportion des observations appartenant à chaque régime, laissant les données déterminer entièrement la répartition finale entre les deux composantes.
+
+Ainsi les priors choisis sont globalement peu informatifs : ils n’imposent ni la position des moyennes, ni la dispersion des composantes, ni leur poids relatif. Cela garantit que les résultats a posteriori sont principalement guidés par les données, et non par des hypothèses a priori trop contraignantes.
+
+## 2.2 Simulation de la distribution prédictive a priori
+
+```{r}
+set.seed(123)
+S <- 5000  # nombre de tirages pour la prédictive a priori
+
+Y_prior <- numeric(S)
+
+for (s in 1:S) {
+  # tirer eta ~ Dirichlet(1,1) => Beta pour K=2
+  eta1_s <- rbeta(1, 1, 1)
+  eta_s <- c(eta1_s, 1 - eta1_s)
+  
+  # tirer mu_k, sigma_k^2
+  mu_s <- rnorm(K, mean = m0, sd = tau0)
+  sigma2_s <- 1 / rgamma(K, shape = a0, rate = b0)  # si prior sur 1/sigma^2 ~ Gamma
+  
+  # tirer un composant
+  k_s <- sample(1:K, size = 1, prob = eta_s)
+  Y_prior[s] <- rnorm(1, mean = mu_s[k_s], sd = sqrt(sigma2_s[k_s]))
+}
+
+hist(Y_prior, breaks = 30, freq = FALSE,
+     main = "Distribution prédictive a priori",
+     xlab = "Y_prior")
+
+```
+
+INTERPRETATION:
+
+Ce graphique représente la distribution prédictive a priori de la variable d’intérêt Y, c’est-à-dire la distribution des temps d’attente simulés avant l’observation des données, uniquement à partir des choix de priors sur les paramètres du modèle (moyennes, variances et poids du mélange). La distribution obtenue est unimodale, relativement étalée et centrée autour d’une valeur intermédiaire, avec une dispersion importante et des queues longues. Cela indique que, a priori, le modèle autorise une large gamme de valeurs possibles pour les temps d’attente, allant de valeurs faibles à des valeurs très élevées, sans privilégier explicitement une structure bimodale. Ce résultat est cohérent avec les priors choisis : les distributions a priori sur les paramètres sont peu informatives et ne forcent pas l’existence de deux régimes distincts. Ainsi, avant d’avoir observé les données, le modèle n’impose pas la bimodalité caractéristique du geyser Old Faithful. La distribution prédictive a priori joue ici un rôle de diagnostic important : elle montre que la structure bimodale qui apparaîtra a posteriori sera bien induite par les données elles-mêmes et non par des hypothèses a priori trop contraignantes
+
+# 3. VRAISEMBLANCE
+
+On observe $Y_1, \ldots, Y_n$ sans voir les $S_i$.
+
+Pour un individu $i$, la densité marginale est : $$
+f(y_i \mid \mu, \sigma^2, \eta)
+= \sum_{k=1}^K \eta_k \, \phi(y_i ; \mu_k, \sigma_k^2).
+$$
+
+où $\phi(. ; \mu, \sigma^2)$ est la densité normale.
+
+Donc la vraisemblance complète est : $$
+L(\mu, \sigma^2, \eta ; y_{1:n})
+= \prod_{i=1}^n \left[ \sum_{k=1}^K \eta_k \, \phi(y_i ; \mu_k, \sigma_k^2) \right].
+$$
+
+# 4. Cas k = 1
+
+Le modèle se réduit à : $$
+Y_i \mid \mu, \sigma^2 \sim \text N(\mu, \sigma^2).
+$$ La vraisemblance associée aux observations $y_1,\dots,y_n$ est : $$
+L(y \mid \mu, \sigma^2)
+= (2\pi\sigma^2)^{-n/2}
+\exp\!\left(
+-\frac{1}{2\sigma^2}
+\sum_{i=1}^n (y_i - \mu)^2
+\right).
+$$
+
+On utilise la décomposition classique : $$
+\sum_{i=1}^n (y_i - \mu)^2
+=
+\sum_{i=1}^n (y_i - \bar y)^2
++ n(\bar y - \mu)^2.
+$$
+
+On choisit le prior Normal–Inverse-Gamma : $$
+\mu \mid \sigma^2 \sim \text N\!\left(m_0,\frac{\sigma^2}{k_0}\right),
+\qquad
+\sigma^2 \sim \text{Inv-Gamma}(a_0,b_0).
+$$
+
+Le prior conjoint s’écrit : $$
+p(\mu,\sigma^2)
+\propto
+(\sigma^2)^{-(a_0+1)}
+\exp\!\left(-\frac{b_0}{\sigma^2}\right)
+\exp\!\left(
+-\frac{k_0}{2\sigma^2}(\mu - m_0)^2
+\right).
+$$
+
+Par la formule de Bayes, la loi a posteriori est : $$
+p(\mu,\sigma^2 \mid y)
+\propto
+(\sigma^2)^{-(a_n+1)}
+\exp\!\left(-\frac{b_n}{\sigma^2}\right)
+\exp\!\left(
+-\frac{k_n}{2\sigma^2}(\mu - m_n)^2
+\right),
+$$
+
+avec les paramètres mis à jour : $$
+k_n = k_0 + n,
+\qquad
+m_n = \frac{k_0 m_0 + n\bar y}{k_0 + n},
+$$ $$
+a_n = a_0 + \frac{n}{2},
+\qquad
+b_n = b_0
++ \frac{1}{2}\sum_{i=1}^n (y_i - \bar y)^2
++ \frac{k_0 n}{2(k_0+n)}(\bar y - m_0)^2.
+$$
+
+On obtient finalement : $$
+\sigma^2 \mid y \sim \text{Inv-Gamma}(a_n,b_n),
+\qquad
+\mu \mid \sigma^2,y \sim \text N\!\left(m_n,\frac{\sigma^2}{k_n}\right).
+$$
+
+# 5. Cas général avec allocations connues
+
+On suppose que tous les $S_i$ sont connus. Alors pour le groupe $k$, on a :\
+$$
+Y_i \mid S_i = k \sim \mathcal{N}(\mu_k, \sigma_k^2)
+$$
+
+**Prior** sur $(\mu_k, \sigma_k^2)$ : même forme que le cas $K = 1$.
+
+Si maintenant les $S_i$​ sont connus, on peut séparer les observations par groupe $k$.\
+Donc pour chaque $k$, on applique les mêmes formules que ci-dessus en remplaçant :
+
+-   $n$ par $n_k$ : nombre d'observations avec $S_i = k$\
+-   $\bar{y}$ par $\bar{y}_k$ : moyenne des $Y_i$ dans le groupe $k$\
+-   $S$ par $S_k = \sum_{i : S_i = k} (y_i - \bar{y}_k)^2$
+
+On obtient alors : $$
+\sigma_k^2 \mid y, S \sim \text{Inv-Gamma}(a_{k,n}, b_{k,n}), \quad
+\mu_k \mid \sigma_k^2, y, S \sim \text{N}(m_{k,n}, \sigma_k^2 / k_{k,n}).
+$$
+
+# 6. PROBABILITÉ D'ALLOCATION
+
+```{r}
+ # pour un point y_i donné et des paramètres mu, sigma2, eta
+post_alloc <- function(y_i, mu, sigma2, eta){
+  dens <- eta * dnorm(y_i, mean = mu, sd = sqrt(sigma2))
+  dens / sum(dens)
+}
+post_alloc
+
+```
+
+On utilise Bayes en considérant que pour un $i$ donné :\
+$$
+P(S_i = k \mid y_i, \mu, \sigma^2, \eta) \propto \eta_k \, \phi(y_i ; \mu_k, \sigma_k^2)
+$$
+
+Donc : $$
+P(S_i = k \mid y_i, \mu, \sigma^2, \eta) 
+= \frac{\eta_k \, \phi(y_i ; \mu_k, \sigma_k^2)}
+       {\sum_{l=1}^K \eta_l \, \phi(y_i ; \mu_l, \sigma_l^2)}.
+$$
+
+INTERPRETATION: Ce sont les probabilités a posteriori d’appartenir à chaque composante, proportionnelles au produit "Pprior × Vraisemblance". Elles sont utilisées soit pour classer les observations, soit dans le Gibbs pour mettre à jour les Si
+
+# 7. POSTERIOR DES POIDS DU MELANGE ( Pour K=2)
+
+```{r}
+# n_k : vecteur des effectifs par composante
+n_k <- tabulate(S, nbins = 2)
+# échantillonner eta ~ Dirichlet
+rdirichlet <- function(n, alpha){
+  k <- length(alpha)
+  x <- matrix(rgamma(n * k, shape = alpha), ncol = k, byrow = TRUE)
+  x / rowSums(x)
+}
+eta <- rdirichlet(1, alpha0 + n_k)
+eta
+```
+
+INTERPRETATION:
+
+Dans cette étape, nous estimons les poids du mélange η=(η1,η2), qui représentent les proportions a posteriori des observations appartenant à chacune des deux composantes du modèle de mélange gaussien. En conditionnant sur les allocations latentes S, les poids suivent une loi de Dirichlet dont les paramètres sont donnés par α0 + nk, où nk correspond au nombre d’observations affectées à chaque composante. Le tirage a posteriori obtenu, η1≈0,47 et η2≈0,53, indique que les deux composantes ont des proportions très proches, avec une légère majorité d’observations associées à la seconde composante. Ce résultat est cohérent avec la structure des données Old Faithful, qui présentent deux régimes d’éruption de tailles comparables. Il confirme également que le modèle n’est pas dominé par une seule composante et que les deux clusters contribuent de manière équilibrée à la description des données, renforçant ainsi la pertinence du modèle de mélange bayésien utilisé.
+
+# 8. IMPLEMENTATION DE L'ALGORITHME DE GIBBS
+
+## 8.1 SCHEMA DE L'ALGORITHME
+
+On veut échantillonner successivement : $$
+(\mu_k, \sigma_k^2, \eta_k, S_i)_{k = 1, \dots, K; \, i = 1, \dots, n}
+$$
+
+Pour $t = 1, \dots, T$ :
+
+1.  **Mise à jour de** $S$
+    -   Calculer $$
+        P(S_i = k \mid y_i, \mu^{(t-1)}, \sigma^{2 (t-1)}, \eta^{(t-1)})
+        $$\
+    -   Tirer $S_i^{(t)}$ selon cette loi catégorielle.
+2.  **Mise à jour de** $\eta$
+    -   Compter $$
+        n_k^{(t)} = \sum_i \mathbf{1}_{S_i^{(t)} = k}
+        $$\
+    -   Tirer $$
+        \eta^{(t)} \sim \text{Dirichlet}(\alpha_0 + n^{(t)})
+        $$
+3.  **Mise à jour de** $(\mu_k, \sigma_k^2)$ pour chaque $k$
+    -   Calculer les statistiques de groupe : $n_k$, $\bar{y}_k$, $S_k$\
+    -   Calculer les hyperparamètres postérieurs : $m_{k,n}$, $k_{k,n}$, $a_{k,n}$, $b_{k,n}$\
+    -   Tirer $$
+        \sigma_k^{2 (t)} \sim \text{Inv-Gamma}(a_{k,n}, b_{k,n})
+        $$\
+    -   Tirer $$
+        \mu_k^{(t)} \mid \sigma_k^{2 (t)} \sim \text{N}\Big(m_{k,n}, \frac{\sigma_k^{2 (t)}}{k_{k,n}}\Big)
+        $$
+
+## 8.2 IMPLÉMENTATION SIMPLIFIÉ (K=2)
+
+```{r}
+set.seed(123)
+
+K <- 2
+y <- faithful$waiting
+n <- length(y)
+
+# Hyperparamètres
+m0 <- 70
+kappa0 <- 0.01    # prior vague
+a0 <- 2
+b0 <- 50
+alpha0 <- rep(1, K)
+
+# Fonctions utilitaires
+dinvgamma <- function(x, shape, scale){
+  ifelse(x > 0, (scale^shape / gamma(shape)) * x^(-shape-1) * exp(-scale/x), 0)
+}
+rinvgamma <- function(n, shape, scale){
+  1 / rgamma(n, shape = shape, rate = scale)
+}
+
+# Initialisation
+S <- sample(1:K, n, replace = TRUE)
+mu <- tapply(y, S, mean)        # moyennes par classe
+sigma2 <- tapply(y, S, var)     # variances par classe
+eta <- rep(1/K, K)
+
+# MCMC
+T <- 5000
+mu_chain <- matrix(NA, nrow = T, ncol = K)
+sigma2_chain <- matrix(NA, nrow = T, ncol = K)
+eta_chain <- matrix(NA, nrow = T, ncol = K)
+S_chain <- matrix(NA, nrow = T, ncol = n)
+
+for (t in 1:T) {
+  # 1) Mise à jour des allocations S_i
+  for (i in 1:n) {
+    dens <- eta * dnorm(y[i], mean = mu, sd = sqrt(sigma2))
+    prob <- dens / sum(dens)
+    S[i] <- sample(1:K, size = 1, prob = prob)
+  }
+  
+  # 2) Mise à jour de eta
+  n_k <- tabulate(S, nbins = K)
+  eta <- as.numeric(rdirichlet(1, alpha0 + n_k))
+  
+  # 3) Mise à jour des (mu_k, sigma2_k)
+  for (k in 1:K) {
+    y_k <- y[S == k]
+    nk <- length(y_k)
+    
+    if (nk > 0) {
+      ybar_k <- mean(y_k)
+      Sk <- sum((y_k - ybar_k)^2)
+      
+      kappa_n <- kappa0 + nk
+      m_n <- (kappa0 * m0 + nk * ybar_k) / kappa_n
+      a_n <- a0 + nk / 2
+      b_n <- b0 + 0.5 * Sk + (kappa0 * nk / (2 * kappa_n)) * (ybar_k - m0)^2
+      
+      sigma2[k] <- rinvgamma(1, shape = a_n, scale = b_n)
+      mu[k] <- rnorm(1, mean = m_n, sd = sqrt(sigma2[k] / kappa_n))
+    } else {
+      # si aucune observation dans la classe, on tire directement du prior
+      sigma2[k] <- rinvgamma(1, a0, b0)
+      mu[k] <- rnorm(1, mean = m0, sd = sqrt(sigma2[k] / kappa0))
+    }
+  }
+  
+  # Stockage
+  mu_chain[t, ] <- mu
+  sigma2_chain[t, ] <- sigma2
+  eta_chain[t, ] <- eta
+  S_chain[t, ] <- S
+}
+
+
+
+
+
+```
+
+INTERPRETATION:
+
+On alterne entre :
+
+-   assigner les données aux composantes (mise à jour des S),
+
+-   mettre à jour les poids du mélange η (Dirichlet),
+
+-   mettre à jour les paramètres de chaque composante (µ, σ²) par conjugaison.
+
+C’est un **Gibbs** sur les variables latentes S et les paramètres du mélange.
+
+## 8.3 DIAGNOSTIC ET DENSITÉ A POSTERIORI
+
+```{r}
+burn <- 2000
+mu_post <- mu_chain[(burn+1):T, ]
+sigma2_post <- sigma2_chain[(burn+1):T, ]
+eta_post <- eta_chain[(burn+1):T, ]
+
+# Traceplots
+par(mfrow = c(2,2))
+plot(mu_chain[,1], type="l", main="Traceplot mu1")
+plot(mu_chain[,2], type="l", main="Traceplot mu2")
+plot(eta_chain[,1], type="l", main="Traceplot eta1")
+plot(sigma2_chain[,1], type="l", main="Traceplot sigma1^2")
+
+```
+
+INTERPRETATION: Diagnostic de convergence et distributions a posteriori
+
+Les traceplots des paramètres μ1, μ2, η1 et σ1\^2 permettent d’évaluer la convergence et la qualité de l’échantillonnage MCMC obtenu par l’algorithme de Gibbs. Après une phase transitoire initiale, éliminée à l’aide d’un burn-in de 2000 itérations, les chaînes présentent un comportement stationnaire, sans tendance apparente ni dérive systématique. Les trajectoires oscillent de manière stable autour d’une valeur moyenne constante, ce qui indique une bonne convergence vers la distribution a posteriori. Les traceplots des moyennes μ1 et μ2 montrent une séparation nette entre les deux composantes du mélange, avec des fluctuations modérées autour de valeurs distinctes, traduisant une bonne identifiabilité des deux régimes d’attente du geyser. Le traceplot du poids du mélange η1 révèle une exploration efficace de la posteriori, avec une variabilité suffisante mais sans blocage aux bornes de l’intervalle [0,1], ce qui suggère une bonne estimation des proportions relatives des deux composantes. Enfin, le traceplot de la variance σ1\^2 indique une stabilisation rapide après le burn-in et une variabilité compatible avec l’incertitude attendue sur la dispersion de la composante correspondante.
+
+Dans l’ensemble, ces diagnostics confirment que l’algorithme MCMC a correctement convergé et que les échantillons a posteriori obtenus sont fiables pour l’inférence bayésienne. Les résultats ultérieurs (estimations ponctuelles, distributions prédictives et tests bayésiens) peuvent donc être interprétés avec confiance.
+
+## 8.4 REPRESENTATION DES CLUSTERS ESTIMÉES
+
+```{r}
+# Classification finale par MAP sur les allocations moyennes
+S_hat <- apply(S_chain[(burn+1):T, ], 2, function(col) {
+  # classe la plus fréquente pour chaque i
+  as.integer(names(sort(table(col), decreasing = TRUE))[1])
+})
+
+# Visualisation
+plot(faithful$waiting, faithful$eruptions,
+     col = S_hat, pch = 19,
+     xlab = "waiting", ylab = "eruptions",
+     main = "Clusters estimés par Gibbs (K=2)")
+
+```
+
+INTERPRETATION:
+
+Ce graphique représente la classification finale des observations obtenue à partir du modèle de mélange gaussien estimé par l’algorithme de Gibbs avec K=2. Chaque point correspond à une observation du jeu de données Old Faithful, représentée selon le temps d’attente (waiting) et la durée de l’éruption (eruptions), et colorée selon la classe la plus probable au sens du maximum a posteriori (MAP) des allocations latentes. On observe une séparation nette entre deux clusters bien distincts : un premier groupe associé à des temps d’attente courts et des éruptions de courte durée, et un second groupe correspondant à des temps d’attente longs et des éruptions plus longues. Cette structuration est cohérente avec la bimodalité connue du geyser Old Faithful et confirme que le modèle de mélange bayésien capture correctement l’hétérogénéité des données. La faible zone de recouvrement entre les deux groupes suggère une bonne capacité de discrimination du modèle, ce qui renforce la pertinence de l’inférence bayésienne réalisée et la fiabilité des classifications obtenues
+
+# 9. DISTRIBUTION PREDICTIVE A POSTERIORI
+
+L'idée ici est de comparer les predictives a priori calculé precedement (en 1.2.2), les predictives a posteriori et les données observées
+
+```{r}
+S_new <- 5000
+Y_post <- numeric(S_new)
+
+idx <- sample((burn+1):T, S_new, replace = TRUE)
+
+for (s in 1:S_new) {
+  mu_s <- mu_chain[idx[s], ]
+  sigma2_s <- sigma2_chain[idx[s], ]
+  eta_s <- eta_chain[idx[s], ]
+  k_s <- sample(1:K, size = 1, prob = eta_s)
+  Y_post[s] <- rnorm(1, mean = mu_s[k_s], sd = sqrt(sigma2_s[k_s]))
+}
+
+# Comparaison graphique
+hist(y, breaks = 30, freq = FALSE, col = rgb(0,0,1,0.3),
+     main = "Données vs prédictive a priori vs a posteriori",
+     xlab = "waiting")
+hist(Y_prior, breaks = 30, freq = FALSE, col = rgb(1,0,0,0.3), add = TRUE)
+hist(Y_post, breaks = 30, freq = FALSE, col = rgb(0,1,0,0.3), add = TRUE)
+legend("topleft",
+       legend = c("Données", "Prédictive a priori", "Prédictive a posteriori"),
+       fill = c(rgb(0,0,1,0.3), rgb(1,0,0,0.3), rgb(0,1,0,0.3)))
+
+
+```
+
+INTERPRETATION:
+
+Ce graphique compare la distribution empirique des données observées avec les distributions prédictives a priori et a posteriori du modèle de mélange bayésien. La distribution des données met en évidence une bimodalité marquée des temps d’attente, caractéristique du geyser Old Faithful, avec deux régimes bien distincts autour des valeurs faibles et élevées de waiting. La distribution prédictive a priori apparaît plus étalée et moins structurée, ce qui reflète le caractère peu informatif des priors et l’absence d’hypothèses fortes imposées avant l’observation des données. En revanche, la distribution prédictive a posteriori reproduit fidèlement la bimodalité observée et s’ajuste très bien à la forme de la distribution empirique, tant en termes de localisation des modes que de dispersion. Cette comparaison illustre clairement le rôle des données dans la mise à jour des croyances initiales : alors que le prior autorise une large gamme de comportements possibles, la posteriori intègre l’information contenue dans les données pour fournir une description précise et cohérente du phénomène étudié, validant ainsi la pertinence du modèle de mélange bayésien retenu.
+
+# 10. TEST BAYESIEN
+
+## 10.1 PROBABILTÉ A PRIORI
+
+Supposons que
+
+$$
+\mu_1 \sim \mathcal{N}(m_0, \tau_0^2)
+$$
+
+Alors :
+
+$$
+P(H_0) = P(\mu_1 < 60) = \Phi\Big(\frac{60 - m_0}{\tau_0}\Big), \quad
+P(H_1) = 1 - P(H_0)
+$$
+
+```{r}
+PH0_prior <- pnorm(60, mean = m0, sd = tau0)
+PH0_prior
+PH1_prior <- 1 - PH0_prior
+PH1_prior
+
+```
+
+## 10.2 PROBABILITÉ A POSTERIORI
+
+On utilise les echantillons MCMC de mhu1 car il représente la moyenne d’une des composantes du modèle de mélange. Après vérification de la stabilité des labels, mhu1 est associé au régime d’attente long du geyser Old Faithful. Il est donc naturel de formuler les hypothèses sur mhu1, car cela permet de tester directement si la moyenne de ce régime dépasse un seuil interprétable (60 minutes), en lien direct avec la structure observée des données.
+
+```{r}
+mu1_post <- mu_chain[(burn+1):T, 1]
+#mu1_post
+PH0_post <- mean(mu1_post < 60)
+PH0_post
+PH1_post <- 1 - PH0_post
+PH1_post
+```
+
+## 10.3 LES FACTEURS DE BAYES
+
+```{r}
+BF01 <- (PH0_post / PH1_post) / (PH0_prior / PH1_prior)
+BF01
+
+```
+
+INTERPRETATION:
+
+Avant l’observation des données, la probabilité a priori de l’hypothèse H0: μ1 \< 60 vaut environ 0,31, tandis que celle de l’hypothèse alternative H1: μ1 ≥ 60 vaut environ 0,69. Cela signifie qu’avant d’analyser les données, le prior privilégiait déjà légèrement l’hypothèse H1, sans pour autant exclure H0. Le choix du prior reste donc relativement peu informatif et laisse une place importante à l’information contenue dans les données. Après observation des données et estimation du modèle par l’algorithme de Gibbs, les probabilités a posteriori deviennent beaucoup plus tranchées : la probabilité de H0 est estimée à 0, tandis que celle de H1 est égale à 1. Autrement dit, dans l’ensemble des tirages MCMC, aucun n’a conduit à une valeur de μ1 inférieure à 60. Les données indiquent donc de manière claire que la moyenne de la composante 1 est supérieure ou égale à 60 minutes, ce qui correspond à un régime d’attente long du geyser Old Faithful. Cette évolution entre le prior et la posteriori est résumée par le facteur de Bayes BF01, qui vaut ici 0. Un facteur de Bayes nul signifie que les données apportent une évidence extrêmement forte contre l’hypothèse H0 et en faveur de l’hypothèse H1. Ainsi, même si le prior n’excluait pas H0, l’information contenue dans les données est suffisamment forte pour rejeter totalement cette hypothèse au profit de H1.
+
+# CONCLUSION
+
+Ce projet montre que le cadre bayésien appliqué à un modèle de mélange gaussien permet de décrire de manière pertinente la structure bimodale des temps d’attente du geyser Old Faithful et d’identifier clairement deux régimes d’éruption distincts. L’algorithme de Gibbs fournit des estimations stables des paramètres du modèle ainsi que des distributions a posteriori informatives, tandis que la distribution prédictive a posteriori reproduit fidèlement les caractéristiques observées dans les données. Le test bayésien basé sur le facteur de Bayes met en évidence une évolution marquée entre le prior et la posteriori, les données apportant une évidence très forte en faveur d’un régime d’attente long pour la composante étudiée. Au-delà du cas d’étude considéré, ce travail illustre l’intérêt des méthodes bayésiennes et de simulation pour l’analyse de données hétérogènes, en offrant un cadre cohérent pour l’estimation, la prédiction et la prise de décision statistique.

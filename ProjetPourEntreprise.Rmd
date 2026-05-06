@@ -1,0 +1,476 @@
+---
+title: "Projet pour l'entreprise"
+subtitle: "Master 2 - MIASHS"
+author: "Abdel Said Chaihane"
+date: "2025 - 2026"
+output:
+  pdf_document:
+    latex_engine: xelatex
+fontsize: 12pt
+mainfont: Times New Roman
+header-includes:
+  - \usepackage[T1]{fontenc}
+  - \usepackage[utf8]{inputenc}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE,
+  message = FALSE,
+  warning = FALSE
+)
+```
+
+```{r, include=FALSE}
+rm(list=ls())
+```
+
+\vspace{5cm}
+
+\begin{center}
+{\LARGE \textbf{Analyse de la durée de rémission des patients dans une clinique kinésithérapeutique}}
+\end{center}
+
+\vspace{3cm}
+
+\begin{center}
+\includegraphics[width=0.35\textwidth]{LogoLille.png}
+\end{center}
+
+\newpage
+
+\tableofcontents
+
+\newpage
+
+```{r, include=FALSE}
+# Librairies
+library(readxl)
+library(knitr)
+library(dplyr)
+library(survival)
+library(ggplot2)
+library(ggsurvfit)
+library(survminer)
+library(gtsummary)
+library(timereg)
+library(lmtest)
+
+library(tibble)
+library(RColorBrewer)
+library(lubridate)
+library(tidycmprsk)
+```
+
+# 1. Introduction
+
+La kinésithérapie constitue un élément central de la prise en charge de nombreuses pathologies, notamment traumatologiques, neurologiques, rhumatologiques, respiratoires ou encore pédiatriques. Elle vise à restaurer ou à améliorer les capacités fonctionnelles des patients au moyen de programmes de rééducation personnalisés, dont la durée et l’intensité peuvent varier considérablement selon la nature de la pathologie, les caractéristiques cliniques du patient et l’organisation des soins. Dans ce contexte, la durée du traitement jusqu’à la rémission apparaît comme un indicateur essentiel de l’efficacité des prises en charge en kinésithérapie.
+
+Dans ce cadre, une étude observationnelle a été conduite à partir de données réelles collectées au sein du cabinet de kinésithérapie *ChezMonKiné*, situé à Dakar. Les données portent sur des patients pris en charge pour différentes catégories diagnostiques, avec un suivi allant du début du traitement jusqu’à la rémission ou, à défaut, jusqu’à une durée maximale d’observation fixée à 50 jours. Les patients pour lesquels la guérison n’a pas été observée au cours de cette période ont été considérés comme censurés à droite. La présence de cette censure rend inadaptées les méthodes classiques d’analyse des durées et justifie le recours aux méthodes spécifiques d’analyse de survie.
+
+La problématique scientifique de ce travail est la suivante : quels sont les facteurs qui influencent la durée de rémission des patients suivis dans une clinique kinésithérapeutique ? Plus précisément, il s’agit d’évaluer l’effet des catégories diagnostiques, du nombre de séances de rééducation et d’autres caractéristiques organisationnelles sur le temps nécessaire à la guérison.
+
+L’objectif principal de ce projet est d’analyser la durée jusqu’à la rémission des patients suivis au cabinet *ChezMonKiné* sur une période de 50 jours et d’identifier les facteurs influençant ce délai. Dans un premier temps, une analyse descriptive permettra de caractériser la distribution des durées de traitement et leur variabilité selon les catégories diagnostiques. Dans un second temps, l’influence de covariables cliniques et organisationnelles sera étudiée à l’aide de modèles de survie. Enfin, l’hypothèse des risques proportionnels sera formellement testée et, en cas de violation, des modèles de Cox étendus intégrant des effets dépendants du temps seront proposés afin de mieux rendre compte de la dynamique du processus de rémission.
+
+```{r, include=FALSE}
+# Importation des données
+Data <- read_excel('Vérification.xlsx')
+dim(Data)
+sum(is.na(Data))
+str(Data)
+```
+
+```{r, include=FALSE}
+# Suppression des lignes avec valeurs manquantes
+Data <- Data[complete.cases(Data), ]
+sum(is.na(Data))
+
+# Suppression de la ligne dont le nombre de séance vaut 60
+Data <- Data[Data$SEANCES != 60, ]
+```
+
+```{r, include=FALSE}
+# Identification des problemes des dates
+Data[which(Data$Duree < 0), ]
+which(is.na(Data$Duree) | Data$Duree < 0)
+```
+
+```{r, include=FALSE}
+# Correction de certaines dates 
+Data$DATEDEDEBUT[75] <- as.Date("2024-12-20")
+Data$DATEDEDEBUT[125] <- as.Date("2024-12-21")
+Data$DATEDEDEBUT[831] <- as.Date("2025-07-26")
+Data$DATEDEDEBUT[1136] <- as.Date("2025-9-30")
+```
+
+```{r, include=FALSE}
+# Correction des durées
+Data$Duree <- as.numeric(Data$DATEDEFIN - Data$DATEDEDEBUT) / (3600 * 24)
+```
+
+```{r, include=FALSE}
+# Ajout de la variable Statut
+Data$Statut <- ifelse(Data$Duree < 50, 1, 0)
+
+Data$Statut <- factor(
+  Data$Statut,
+  levels = c(0, 1),
+  labels = c("Censure", "Guéris")
+)
+```
+
+```{r, include=FALSE}
+Data$TRAITANTS <- factor(Data$TRAITANTS)
+Data$ClasseDiagnostic <- factor(Data$ClasseDiagnostic)
+Data$StatutNum <- ifelse(Data$Statut == "Guéris", 1, 0)
+```
+
+# 2. Données et variables
+
+## 2.1. Description de la base de données
+
+### 2.1.1. Source des donnees
+
+Les donnees utilisées dans ce travail proviennent du centre de rééducation fonctionnelle « Chez Mon Kiné » qui s’est installé sur la VDN, depuis octobre 2019. C'est une structure sanitaire privée qui offre des consultations spécialisées, des soins de kinésithérapie, des soins infirmières et d’appareillage orthopédique. Le Centre situé dans un environnement économique dynamique de Dakar, a débuté ses activités officiellement en 2018. Il a une capacité d’accueil de 120 patients par jour en soins de kinésithérapie et 20 patients par jour en consultation. Elles ont ete anonymisées avant l’analyse afin de garantir la confidentialité des patients. La base de donnees contient des informations cliniques et organisationnelles relatives au suivi des patients, notamment la categorie diagnostique, le nombre de seances effectuees, la duree du traitement et le statut de guerison.
+
+### 2.1.2. Population étudiée
+
+La population étudiée est constituée de patients pris en charge au sein du cabinet de kinésithérapie ChezMonKine, situe a Dakar. Les patients inclus dans l’etude ont debute un traitement de reeducation au cours de la periode d’observation et ont ete suivis depuis le debut de leur prise en charge jusqu’à la guerison ou jusqu’a la fin du suivi. Les pathologies prises en charge couvrent plusieurs categories diagnostiques, notamment des affections traumatiques, neurologiques, rhumatologiques, respiratoires, pediatriques et sportives.
+
+### 2.1.3. Taille de l’echantillon
+
+La base de donnees comprend 1222 patients suivis au cours de la periode d’etude. Chaque patient contribue une observation a la base, correspondant a la duree de suivi jusqu’a la guerison ou a la censure a droite, fixee a 50 jours. La presence de patients censures justifie le recours aux methodes d’analyse de survie pour l’etude de la duree de traitement.
+
+## 2.2. Variables
+
+### 2.2.1. Variables de survies
+
+-   **Durée** : variable de survie correspondant aux jours ecoulés entre le debut du traitement de kinesitherapie et la guerison du patient. Lorsque la guerison n’est pas observee au cours de la periode de suivi, limitee a 50 jours, la duree est considerée comme censurée a droite.
+
+-   **Statut** : variable binaire indiquant la survenue de l’evenement d’interêt (guérison du patient). Elle prend la valeur 1 lorsque le patient est gueri au cours du suivi et la valeur 0 lorsque l’observation est censurée.
+
+### 2.2.2. Covariables
+
+-   **ClasseDiagnostic** : variable qualitative correspondant a la categorie diagnostique principale du patient. Elle distingue les differentes pathologies prises en charge au sein du cabinet (Rhumatologie, Traumatologie, Neurologie, Drainage Lymphatique, Reeducation Urogenitale, Pediatrie, Pathologies Sportives, Orthopedie, Neurochirurgie, Pneumologie) et est integree aux analyses sous forme de facteur.
+
+-   **SEANCES** : variable quantitative representant le nombre total de seances de kinesitherapie effectuees par le patient durant la periode de suivi. Elle constitue une mesure de l’intensite de la prise en charge therapeutique.
+
+-   **TRAITANTS** : variable qualitative identifiant le professionnel de sante prescripteur ou referent du patient. Cette variable est utilisee de maniere optionnelle afin d’explorer une heterogeneite non observee entre prescripteurs, notamment a travers l’introduction d’effets aleatoires dans les modeles de survie.
+
+# 3. Analyse descriptive
+
+## Repatition des observations suivant le statut
+
+```{r}
+ggplot(Data, aes(x = Statut, fill = Statut)) +
+  geom_bar(
+  ) +
+  labs(title = "Repartition des observations suivant le statut",
+       x = NULL,
+       y = "Effectif") +
+  theme_minimal() +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+```
+
+Le graphique montre le nombre de patients guéris et de patients censurés (dont la guérison n’a pas été observée pendant le suivi). La majorité des patients ont guéri, et peu ont été censurés, ce qui indique que la plupart des guérisons ont été observées pendant les 50 jours de suivi. Cette bonne observabilité des événements permet d’analyser la survie et d’utiliser des modèles tels que celui de Cox.
+
+## Repatition des observations suivant la catégorie de diagnostic
+
+```{r}
+ggplot(Data, aes(x = ClasseDiagnostic, fill = ClasseDiagnostic)) +
+  geom_bar() +
+  theme_minimal() +
+  labs(
+    title = "Repartition des observations suivant la catégorie de diagnostic",
+    x = NULL,
+    y = "Effectif"
+  ) +
+  theme(
+    axis.text.x  = element_blank(),
+    axis.ticks.x = element_blank()
+  )
+```
+
+La répartition des observations selon la catégorie de diagnostic montre une forte concentration des données dans deux spécialités principales, la rhumatologie et la neurologie, qui regroupent à elles seules la majorité des cas. Les autres catégories présentent des effectifs nettement plus faibles, avec quelques spécialités intermédiaires comme la rééducation urogénitale, les pathologies sportives et la traumatologie, tandis que le drainage lymphatique, la neurochirurgie, la pédiatrie, la pneumologie et l’orthopédie sont très peu représentées. Cette distribution traduit un déséquilibre marqué entre les classes de diagnostic, indiquant que certaines pathologies dominent largement l’échantillon étudié.
+
+## Distribution des durées de survies selon le statut
+
+```{r}
+ggplot(Data, aes(x = Duree, fill = Statut)) +
+  geom_histogram(
+    position = "identity",
+    alpha = 0.7,
+    bins = 30
+  ) +
+  labs(title = "Distribution des durées de survies selon le statut",
+       y = "Effectif") +
+  theme_minimal()
+```
+
+Les patients ayant atteint la rémission présentent majoritairement des durées de traitement plus courtes, n’excédant pas 50 jours, tandis que les patients censurés correspondent à des suivis plus longs, avec des durées d’observation supérieures à cette limite. Cette configuration est cohérente avec le protocole de suivi adopté, selon lequel l’absence de guérison observée au-delà de la durée maximale de suivi entraîne une censure à droite.
+
+## La nombre de sceance selon le statut
+
+```{r}
+ggplot(Data, aes(x = Statut, y = SEANCES, fill = Statut)) +
+  geom_boxplot() +
+  theme_minimal() 
+```
+
+Ces boxplots montrent que les patients censurés ont, en moyenne, un nombre de séances plus élevé et plus variable que les patients guéris. La médiane et la dispersion sont nettement plus importantes dans le groupe censuré, avec la présence de certains patients suivis au-delà de 20 séances sans guérison observée. À l’inverse, les patients guéris présentent un nombre de séances plus faible et plus homogène, plusieurs d’entre eux atteignant la rémission après seulement une à cinq séances.
+
+## Repartition des statuts du patient selon le type de diagnostic
+
+```{r}
+tab <- as.data.frame(table(Data$Statut, Data$ClasseDiagnostic))
+colnames(tab) <- c("Statut", "ClasseDiagnostic", "Effectif")
+
+ggplot(tab, aes(x = ClasseDiagnostic, y = Effectif, fill = Statut)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+```
+
+On remarque globalement que, dans toutes les catégories diagnostiques, le nombre de patients guéris est supérieur à celui des patients non guéris (censurés), ce qui suggère une efficacité globale de la prise en charge kinésithérapique sur la période de suivi. Toutefois, la présence non négligeable de patients censurés dans certaines spécialités indique que la guérison n’a pas toujours été observée dans le délai d’observation fixé.
+
+# 4. Analyse de survie non paramétrique : Kaplan-Meier
+
+## 4.1. Courbe de Kaplan-Meier glpbal
+
+```{r, include=FALSE}
+ObjetSurvie <- Surv(Data$Duree, Data$Statut == "Guéris")
+```
+
+```{r}
+# Estimation globale
+SurvDataGlobal <- survfit(ObjetSurvie ~ 1)
+print(summary(SurvDataGlobal))
+```
+
+```{r}
+# Courbe Kaplan Meier globale
+ggsurvplot(
+  SurvDataGlobal,
+  data = Data,
+  conf.int = TRUE,
+  risk.table = TRUE,
+  ggtheme = theme_minimal(),
+  xlab = "Durée du traitement",
+  ylab = "Probabilité de non-rémission",
+  title = "Courbe de survie globale (Kaplan-Meier)"
+)
+```
+
+La courbe de survie globale montre une diminution rapide de la probabilité de non-rémission au cours des premières semaines de traitement, indiquant que la majorité des patients guérissent relativement tôt, principalement avant 50 jours. Au-delà de cette période, la courbe se stabilise, ce qui traduit la présence d’un faible nombre de patients non guéris, représentés par les marques sur la courbe, et la rareté des nouveaux événements.
+
+## Interpetation des quartiles
+
+```{r}
+# Estimation des quartiles
+print(data.frame(
+  Quartiles = c("25%", "50% (Médiane)", "75%"),
+  Jours = quantile(SurvDataGlobal, probs = c(0.25, 0.5, 0.75))$quantile
+))
+```
+
+L’estimation des quartiles de la survie globale montre que 25% des patients ont atteint la rémission avant 23 jours, 50% avant 30 jours et 75% avant 39 jours. Cela indique que la majorité des patients guérissent dans un intervalle compris entre 23 et 39 jours, avec des temps de récupération variables selon les individus. Certains patients présentent une rémission rapide dès les premières semaines, tandis que d’autres mettent plus de temps à atteindre l’état de guérison, soulignant la diversité des trajectoires cliniques. Pour mieux comprendre ces différences, il est utile d’examiner la survie en fonction des différentes catégories de suivi, afin de comparer les probabilités de rémission selon les groupes.
+
+## 4.2. Estimation par groupe pour les categories de diagnostics
+
+```{r}
+SurvDataCD <- survfit(ObjetSurvie ~ Data$ClasseDiagnostic)
+SurvDataCD
+
+# Courbe Kaplan Meier par catégorie de diagnostic
+ggsurvplot(
+  SurvDataCD,
+  data = Data,
+  ggtheme = theme_minimal(),
+  xlab = "Durée du traitement",
+  ylab = "Probabilité de non-rémission",
+  title = "Courbes de survie par catégorie de diagnostic",
+  size = 0.5,
+  censor.size = 2,
+  censor.shape = "|",
+  legend.labs = levels(Data$ClasseDiagnostic),
+  font.legend = c(6)
+)
+
+```
+
+Au cours des 50 jours de suivi, les patients pris en charge en pneumologie se distinguent par une diminution plus rapide de la probabilité de non-rémission au fil du temps, suggérant une guérison plus précoce. À noter que tous les patients suivis en pneumologie sont guéris à la fin de la période de suivi. À l’inverse, les patients suivis en pédiatrie présentent une probabilité de non-rémission encore élevée au jour 50 (0,312), indiquant des temps de guérison plus longs. Pour les autres patients, les courbes de survie sont largement superposées, ce qui suggère des comportements similaires en termes de probabilité de non-rémission au cours du temps.
+
+## Test du log-rang
+
+```{r}
+survdiff((ObjetSurvie) ~ Data$ClasseDiagnostic)
+```
+
+Le test du log-rank met en évidence une différence globalement significative entre les courbes de survie selon la classe de diagnostic avec une p-value = 6e-14. Ce résultat confirme que les temps jusqu’à la guérison ne sont pas identiques entre les différentes spécialités. La contribution très élevée de la pneumologie explique en grande partie cette différence, traduisant une guérison plus rapide dans ce groupe. À l’inverse, la pédiatrie présente moins d’événements observés que prévu, ce qui est cohérent avec une probabilité de non-rémission plus élevée et des temps de guérison plus longs. Pour les autres spécialités, les écarts entre événements observés et attendus restent faibles, suggérant des comportements de survie similaires.
+
+## 4.3. Estimation par groupe pour les traitants
+
+```{r}
+SurvDataT <- survfit(ObjetSurvie ~ Data$TRAITANTS)
+SurvDataT
+
+# Courbe Kaplan Meier par catégorie de diagnostic
+ggsurvplot(
+  SurvDataT,
+  data = Data,
+  ggtheme = theme_minimal(),
+  xlab = "Durée du traitement",
+  ylab = "Probabilité de non-rémission",
+  title = "Courbe de survie suivant les traitants",
+  size = 0.5,
+  censor.size = 2,
+  censor.shape = "|",
+  legend.labs = levels(Data$TRAITANTS),
+  font.legend = c(6)
+)
+```
+
+L’analyse des courbes de survie selon les médecins traitants montre que les courbes sont largement superposées, ce qui suggère que le médecin traitant n’a pas d’effet systématique fixe sur la probabilité de guérison. Cela peut être interprété comme un effet aléatoire faible ou négligeable : la variabilité liée au médecin est faible par rapport à la variabilité entre patients et n’influence pas significativement le risque de guérison. Les différences observées sont donc principalement liées aux caractéristiques des patients ou à l’intensité de la prise en charge, plutôt qu’au professionnel en charge.
+
+## Test du log-rang
+
+```{r}
+survdiff(Surv(Data$Duree, Data$Statut == "Guéris") ~ Data$TRAITANTS)
+```
+
+Le test de log-rank montre que les courbes de survie selon les médecins traitants sont largement superposées (p = 0,07), ce qui indique qu’il n’existe pas de différence significative de probabilité de guérison entre les praticiens. En pratique, cela suggère que le médecin traitant n’a pas d’effet notable sur la vitesse de guérison, et que les variations observées sont principalement liées aux caractéristiques des patients ou à l’intensité de la prise en charge plutôt qu’au professionnel en charge.
+
+# 5. Modèle de Cox
+
+## 5.1. Construction de deux modèles de Cox
+
+```{r}
+Model <- coxph(ObjetSurvie ~ ClasseDiagnostic + SEANCES + TRAITANTS, data = Data)
+ModelCox <- coxph(ObjetSurvie ~ ClasseDiagnostic + SEANCES, data = Data)
+```
+
+Nous allons construire deux modèles de Cox : un modèle complet incluant toutes les variables explicatives et un modèle réduit excluant la variable TRAITANT pour évaluer son effet sur le risque de non-rémission.
+
+Le **modèle complet** de Cox est formulé comme suit :
+
+$$
+h(t \mid X)
+=
+h_0(t)\,
+\exp\left(
+\sum_{k=2}^{K} \beta_{1k}\,I(\text{ClasseDiagnostique}=k)
++ \beta_{2}\,\text{SEANCES}
++ \sum_{j=2}^{J} \beta_{3j}\,I(\text{TRAITANT}=j)
+\right)
+$$
+
+où $h(t \mid X)$ est le risque instantané de non-rémission au temps $t$, $h_0(t)$ est le risque de base, et $\beta_1, \beta_2, \beta_3$ sont les coefficients associés aux variables explicatives.
+
+Le **modèle réduit** exclut la variable TRAITANT :
+
+$$
+h(t \mid X)
+=
+h_0(t)\,
+\exp\left(
+\sum_{k=2}^{K} \beta_{1k}\,I(\text{ClasseDiagnostique}=k)
++ \beta_{2}\,\text{SEANCES}
+\right)
+$$
+
+
+## 5.2. Comparaison des deux modeles avec le critere AIC
+
+```{r}
+AIC(Model, ModelCox)
+```
+
+Pour comparer la qualité des modèles, nous avons utilisé le critère d’information d’Akaike (AIC), qui combine la vraisemblance du modèle et une pénalité pour le nombre de paramètres afin d’éviter le sur-ajustement. Le modèle complet, incluant toutes les variables explicatives, présente un AIC de 13153,29, tandis que le modèle réduit, excluant la variable TRAITANTS, a un AIC légèrement inférieur (13152,36) avec 10 degrés de liberté. Cette comparaison indique que l’exclusion de la variable TRAITANTS ne détériore pas l’ajustement du modèle et simplifie l’interprétation, ce qui facilite l’évaluation de l’effet des autres facteurs sur le risque de non-rémission.
+
+## 5.3. Modèle retenue
+
+```{r}
+tbl_regression(ModelCox, exponentiate = TRUE)
+```
+
+L’analyse des Hazard Ratios par cate1gorie de diagnostique montre que certaines catégories présentent un risque de non-rémission proche des patients pris en charge pour un drainage lymphatique. C’est le cas des patients pris en charge pour des pathologies sportives ou en pédiatrie, dont les Hazard Ratios sont très proches de 1, indiquant que leur probabilité de guérison est similaire aux patients pris en charge pour un drainage lymphatique. À l’inverse, les patients suivis en pneumologie ou pour des traumatologies présentent un HR légèrement supérieur à 1, suggérant un risque un peu plus élevé de non-rémission. D’autres patients, pris en charge dans différents services, présentent un Hazard Ratios inférieur à 1, traduisant une tendance vers une rémission plus rapide. Cependant, aucune de ces différences n’atteint la significativité statistique. Seule la variable liée au nombre de séances est significativement associée à la rémission (HR = 0.80() dont la p-value \< 0.001, indiquant que l’augmentation du nombre de séances diminue de manière notable le risque de non-rémission.
+
+## 5.4. Test de Schoenfeld
+
+```{r}
+SchoenfeldTest <- cox.zph(ModelCox)
+SchoenfeldTest
+```
+
+Le test de Schoenfeld vérifie si l’effet d’une variable dans un modèle de Cox reste constant dans le temps (risques proportionnels). Une p-value \> 0,05 indique que l’effet est stable, tandis qu’une p-value \< 0,05 signifie que l’effet varie au cours du suivi.
+
+Dans nos résultats, le test indique que l’hypothèse des risques proportionnels n’est pas respectée pour le type de prise en charge et pour le nombre de séances, ainsi que globalement pour l’ensemble du modèle. Autrement dit, l’effet de la prise en charge et de l’intensité des séances ne reste pas constant dans le temps et évolue au cours du suivi, ce qui constitue une violation de cette hypothèse clé du modèle de Cox. En pratique, cela suggère qu’il peut être nécessaire d’adapter l’analyse en modélisant les effets temporels ou en examinant les interactions avec le temps afin de mieux comprendre comment ces facteurs influencent la probabilité de guérison.
+
+## 5.5. Résidus de Schoenfeld au fil du temps pour chaque covariable.
+
+```{r}
+ggcoxzph(SchoenfeldTest)
+```
+
+Le graphique des résidus de Schoenfeld montre que l’effet des facteurs étudiés sur le risque de non-rémission n’est pas constant dans le temps. Pour le type de pathologie prise en charge, la courbe lissée s’écarte d’une ligne horizontale et le test significatif indique que son influence évolue au cours du suivi. De façon encore plus marquée, l’intensité de la prise en charge, mesurée par le nombre de séances, présente une variation temporelle nette, traduisant un effet différent selon les phases du suivi. Le test global, très significatif, confirme que l’hypothèse des risques proportionnels n’est pas respectée pour l’ensemble du modèle, ce qui justifie d’adapter l’analyse pour tenir compte de l’évolution de l’effet de ces facteurs dans le temps.
+
+## 5.6. Modélisation avancée (Correction du PH)
+
+```{r}
+Data$Duree_ <- ifelse(Data$Duree == 0, 1, Data$Duree)
+
+ObjetSurvie_ <- Surv(Data$Duree_, Data$Statut == 'Guéris')
+
+ModelCoxTD <- coxph(
+  ObjetSurvie_ ~ strata(ClasseDiagnostic) + tt(SEANCES),
+  data = Data,
+  tt = function(x, t, ...) x * log(t)
+)
+
+tbl_regression(ModelCoxTD, exponentiate = TRUE)
+```
+
+Dans ce modèle, la variable **SEANCES** est modélisée comme dépendante du temps, ce qui permet de tenir compte du fait que son effet sur le risque de retard de guérison évolue au cours du suivi. Le coefficient est négatif (coef = -0,0619), et le hazard ratio correspondant est de 0,94. Cela signifie que chaque séance supplémentaire réduit le risque de ne pas être guéri, c'est à dire augmente les chances de guerir et que cet effet varie avec le temps, conformément à la fonction choisie $\log(t)$. Choisir $\log(t)$ comme fonction du temps signifie qu’on suppose que l’effet de la variable évolue proportionnellement au logarithme du temps, plutôt que de manière linéaire ou exponentielle.
+
+La variable **ClasseDiagnostic** est stratifiée, ce qui corrige la violation de l’hypothèse des risques proportionnels observée précédemment. La stratification permet de prendre en compte les différences de risque initial entre les types de pathologie sans calculer de HR pour cette variable.Comparaison des modèle (Choix du modèle finale)
+
+## 5.7. Comparaison des modèles
+
+| Critère | Modèle Cox classique (ModelCox) | Modèle Cox dépendant du temps (ModelCoxTD) |
+|------------------------|------------------------|------------------------|
+| Hypothèse des risques proportionnels | Violée pour `ClasseDiagnostic` et `SEANCES` | Respectée grâce à `tt(SEANCES)` et `strata(ClasseDiagnostic)` |
+| Effet temporel | HR constants | HR de SEANCES varie avec le temps |
+| Interprétation | Simple | HR pour SEANCES dépend du temps ; ClasseDiagnostic ajusté via stratification |
+| AIC | 13152,36 | 10218.29 |
+| Ajustement | Bon | Très bon, tient compte de la variation temporelle des effets |
+
+Bien que le modèle **classique** soit plus simple, le modèle **dépendant du temps** est statistiquement plus correct et cliniquement plus fiable pour décrire l’évolution de la probabilité de guérison.
+
+## 5.8. Avantage et limites
+
+| Aspect | Avantages | Limites |
+|-------------------|-----------------------------|------------------------|
+| Effet temporel | Permet de modéliser l’effet des séances qui varie dans le temps | HR devient dépendant du temps, plus complexe à interpréter qu’un HR constant |
+| Stratification | Corrige la violation des risques proportionnels pour le type de prise en charge | Empêche de calculer un HR direct pour le type de prise en charge |
+| Ajustement | Meilleur ajustement statistique pour refléter les variations de risque au fil du suivi | Modèle plus complexe et plus lourd que le Cox classique |
+| Interprétation | Plus réaliste : reflète la dynamique réelle des effets cliniques | Les résultats demandent plus d’explications pour un lecteur non statistique |
+| Robustesse | Permet de tenir compte des différences initiales de risque entre catégories | Choix de la fonction temporelle ($\log(t)$) arbitraire, pourrait légèrement influencer les résultats |
+
+# 6. Analyse et implications cliniques
+
+Dans notre étude, le modèle de Cox dépendant du temps a montré que l’intensité de la prise en charge, mesurée par le nombre de séances, réduit significativement le risque de retard de guérison, et cet effet varie au cours du suivi. Les patients bénéficiant de séances plus fréquentes voient donc leur probabilité de guérison augmenter plus rapidement au début du suivi, avec un effet qui se stabilise progressivement. La stratification par type de prise en charge a permis de tenir compte des différences initiales de risque entre catégories, sans calculer de hazard ratio direct pour ce facteur.
+
+Nos résultats sont cohérents avec plusieurs études antérieures qui montrent que l’intensité des interventions thérapeutiques influence la vitesse de récupération, en particulier dans des suivis prolongés. La littérature souligne également l’importance d’ajuster l’analyse selon le type de pathologie ou de prise en charge, afin de tenir compte de variations initiales de risque, ce que notre modèle stratifié permet de faire. La prise en compte de l’effet temporel des séances est moins fréquente dans la littérature, mais correspond à une approche plus réaliste des trajectoires de guérison observées cliniquement.
+
+Ces résultats suggèrent que la planification du nombre de séances doit être adaptée aux besoins des patients, notamment en début de suivi pour maximiser l’effet thérapeutique. La stratification par type de pathologie permet également d’identifier les patients nécessitant un suivi plus attentif, même si l’effet des séances reste bénéfique pour tous. Enfin, modéliser les effets temporels permet de mieux anticiper la progression de la guérison et de personnaliser la prise en charge en fonction de l’évolution du risque au fil du temps.
+
+# 7. Conclusison
+
+L’analyse des modèles de Cox a montré que l’intensité de la prise en charge, mesurée par le nombre de séances, réduit significativement le risque de retard de guérison, et que cet effet évolue au cours du suivi. La stratification par type de prise en charge a permis de tenir compte des différences initiales de risque entre les catégories de patients, assurant un ajustement plus précis du modèle. Comparé au modèle de Cox classique, le modèle dépendant du temps fournit une représentation plus réaliste de la dynamique de guérison.
+
+Ces résultats ont des implications pratiques importantes : ils suggèrent d’adapter la fréquence et le nombre de séances en fonction des besoins des patients et de leur type de prise en charge, en particulier au début du suivi. Par ailleurs, l’analyse serait encore plus pertinente si certaines variables supplémentaires, telles que l’âge, le niveau de sévérité de la pathologie ou les comorbidités, étaient prises en compte, car elles pourraient influencer la vitesse de récupération et permettre un ajustement encore plus précis. Enfin, ces observations ouvrent des perspectives pour des analyses futures intégrant d’autres facteurs temporels ou interactions, afin de mieux anticiper l’évolution de la guérison et d’optimiser la prise en charge personnalisée.
