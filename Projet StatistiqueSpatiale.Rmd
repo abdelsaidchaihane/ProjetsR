@@ -45,7 +45,7 @@ Pour atteindre cet objectif, le projet s’articule autour de plusieurs étapes 
 ## Importation des données
 
 ```{r, echo=TRUE}
-Champ <- st_read("Données-20251225/rosas1999.shp")
+Champ <- st_read("data/Données-20251225/rosas1999.shp")
 
 # Conversion en 'sp'
 Champ <- as(Champ, "Spatial")
